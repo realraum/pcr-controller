@@ -24,52 +24,60 @@ int32_t pid_i_ = 512;
 int32_t pid_d_ = 24576;
 
 int32_t pid_i_integralsum_ = 0;
-int32_t pid_d_last_error_ = 0;
+int32_t pid_last_input_ = 0;
 
-uint16_t pid_target_value_ = 0;
+int16_t pid_target_value_ = PID_DISABLED;
 
 void pid_setP(int16_t p)
 {
-    pid_p_ = (int32_t) p * PID_SCALE;
+    pid_p_ = (int32_t) p;
     pid_saveToEEPROM();
 }
 
 void pid_setI(int16_t i)
 {
-    pid_i_ = (int32_t) i * PID_SCALE;
+    pid_i_ = (int32_t) i;
     pid_saveToEEPROM();
 }
 
 void pid_setD(int16_t d)
 {
-    pid_d_ = (int32_t) d * PID_SCALE;
+    pid_d_ = (int32_t) d;
     pid_saveToEEPROM();
 }
 
 void pid_printVars(void)
 {
-    printf("PID P: %d\r\nPID I: %d\r\nPID D: %d\r\n", (int16_t) (pid_p_ / PID_SCALE), (int16_t) (pid_i_ / PID_SCALE), (int16_t) (pid_d_ / PID_SCALE));
+    printf("PID P: %d /%d\r\nPID I: %d /%d\r\nPID D: %d /%d\r\n", (int16_t) (pid_p_), (int16_t) PID_SCALE, (int16_t) (pid_i_), (int16_t) PID_SCALE, (int16_t) (pid_d_), (int16_t) PID_SCALE);
 }
 
-void pid_setTargetValue(uint16_t v)
+void pid_setTargetValue(int16_t v)
 {
     pid_target_value_ = v; 
 }
 
-uint16_t pid_getTargetValue(void)
+int16_t pid_getTargetValue(void)
 {
     return pid_target_value_;
 }
 
-// PRE-CONDITION: call pid_calc at exactly regular intervals !!
-int16_t pid_calc(uint16_t current_value)
+int pid_isEnabled(void)
 {
+    return pid_target_value_ != PID_DISABLED;
+}
+
+// PRE-CONDITION: call pid_calc at exactly regular intervals !!
+int16_t pid_calc(int16_t current_value)
+{
+    if (pid_target_value_ == PID_DISABLED)
+        return PID_DISABLED;
+
     int32_t		error = pid_target_value_ - current_value;
     // derivative
     // instead of derivative of error we take derivative on measurement
     // since dError/dt = - dInput/dt   (note the - )    
-    int32_t		d_measure = current_value - pid_d_last_error_;
-    pid_d_last_error_ = error;
+    int32_t		d_measure = current_value - pid_last_input_;
+    pid_last_input_ = current_value;
 
     // integral (bring pid_i_ into integral, so we get smooth transfer if pid_i_ suddenly changes)
     pid_i_integralsum_ += pid_i_ * error;

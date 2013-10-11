@@ -59,7 +59,8 @@
 #define TOPHEAT_PIN PIND7
 
 uint8_t num_temp_sensors_ = 0;
-uint16_t raw_temp_ = 0;
+int16_t raw_temp_ = 0;
+uint8_t debug_ = 0;
 
 void queryAndSaveTemperature(uint8_t bit_resolution)
 {
@@ -90,7 +91,10 @@ void queryAndSaveTemperature(uint8_t bit_resolution)
 
 void printRawTemp(int16_t raw_temp)
 {
-  printf("%d.%02d", raw_temp / 16, 100 * (raw_temp % 16) / 16);
+  int16_t decimals = 100 * (raw_temp % 16) / 16;
+  if (decimals < 0)
+    decimals *= -1;
+  printf("%d.%02d", raw_temp / 16, decimals);
 }
 
 void printTemperature(void)
@@ -150,6 +154,8 @@ void setPeltierCoolingDirectionPower(int16_t value)
     PIN_HIGH(PORTB, PELTIER_INB);
     pwm_set((uint8_t) (-1 * value)); 
   }
+  if (debug_)
+    printf("Peltier value: %d, INA: %d, INB: %d\r\n", value, (PORTF & _BV(PELTIER_INA)) > 0, (PORTB & _BV(PELTIER_INB)) > 0);
 }
 
 void handle_cmd(uint8_t cmd)
@@ -161,6 +167,9 @@ void handle_cmd(uint8_t cmd)
     return;
   case 'R':
   case 'r': reset2bootloader(); break;
+  case '?': debug_ = ~debug_; break;
+  case '=': pid_setTargetValue(raw_temp_); break;
+  case '#': pid_setTargetValue(PID_DISABLED); break;
   case 's': printTemperature(); return;
   case 'L': led_toggle(); break;
   case 't':
@@ -207,6 +216,7 @@ int main(void)
   PINMODE_OUTPUT(DDRD, TOPHEAT_PIN);
   
   pwm_init();
+  pwm_set(0);
   
   pid_loadFromEEPROM();
 
@@ -232,7 +242,10 @@ int main(void)
     //              that's bad, since the routing requires that it be called at exact intervalls
     //              maybe we should use a interrupt routine
 
-    setPeltierCoolingDirectionPower(pid_calc(raw_temp_));
+    if (pid_isEnabled())
+    {
+      setPeltierCoolingDirectionPower(pid_calc(raw_temp_));
+    }
     
     anyio_task();
   }
