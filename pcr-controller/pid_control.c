@@ -1,3 +1,10 @@
+/*
+ *  OpenPCR Teensy Controller Code
+ *
+ *
+ *  Copyright (C) 2013 Bernhard Tittelbach <xro@realraum.at>
+*/
+
 #include "pid_control.h"
 
 #include <avr/eeprom.h>

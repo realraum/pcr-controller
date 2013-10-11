@@ -1,3 +1,10 @@
+/*
+ *  OpenPCR Teensy Controller Code
+ *
+ *
+ *  Copyright (C) 2013 Bernhard Tittelbach <xro@realraum.at>
+*/
+
 #ifndef PID_CONTROLLER_INCLUDE_H_
 #define PID_CONTROLLER_INCLUDE_H_
 
