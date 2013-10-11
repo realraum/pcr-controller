@@ -37,6 +37,7 @@
 #include "ds1820.h"
 
 #include "pwm.h"
+#include "pid_control.h"
 
 #define PIN_HIGH(PORT, PIN) PORT |= (1 << PIN)
 #define PIN_LOW(PORT, PIN) PORT &= ~(1 << PIN)
@@ -57,15 +58,8 @@
 #define PELETIER_PWM_EN PINB5
 #define TOPHEAT_PIN PIND7
 
-
-
 uint8_t num_temp_sensors_ = 0;
 uint16_t raw_temp_ = 0;
-uint16_t target_temp_ = 0;
-uint16_t pid_p_ = 0;
-uint16_t pid_i_ = 0;
-uint16_t pid_d_ = 0;
-uint16_t pid_err_ = 0;
 
 void queryAndSaveTemperature(uint8_t bit_resolution)
 {
@@ -139,6 +133,25 @@ int16_t readNumber(void)
   return atoi(buffer);
 }
 
+void setPeltierCoolingDirectionPower(int16_t value)
+{
+  if (value > 255)
+    value = 255;
+  if (value < -255)
+    value = -255;
+  
+  if (value >= 0)
+  {
+    PIN_HIGH(PORTF, PELTIER_INA);
+    PIN_LOW(PORTB, PELTIER_INB);
+    pwm_set((uint8_t) value);
+  } else {
+    PIN_LOW(PORTF, PELTIER_INA);
+    PIN_HIGH(PORTB, PELTIER_INB);
+    pwm_set((uint8_t) (-1 * value)); 
+  }
+}
+
 void handle_cmd(uint8_t cmd)
 {
   switch(cmd) {
@@ -152,18 +165,18 @@ void handle_cmd(uint8_t cmd)
   case 'L': led_toggle(); break;
   case 't':
     printf("TargetTemp: ");
-    printRawTemp(target_temp_);
+    printRawTemp(pid_getTargetValue());
     printf("\r\n");
     return;
   case 'p': 
   case 'i':
   case 'd':
-    printf("PID P: %d\r\nPID I: %d\r\nPID D: %d\r\n", pid_p_, pid_i_, pid_d_);
+    pid_printVars();
     return;
-  case 'T': target_temp_ = readNumber(); break;
-  case 'P': pid_p_ = readNumber(); break;
-  case 'I': pid_i_ = readNumber(); break;
-  case 'D': pid_d_ = readNumber();  pwm_set((uint8_t) pid_d_);  break;
+  case 'T': pid_setTargetValue(readNumber()); break;
+  case 'P': pid_setP(readNumber()); break;
+  case 'I': pid_setI(readNumber()); break;
+  case 'D': pid_setD(readNumber()); break;
   case 'A': PIN_HIGH(PORTB, PUMP_PIN); break;
   case 'a': PIN_LOW(PORTB, PUMP_PIN); break;  
   case 'B': PIN_HIGH(PORTD, TOPHEAT_PIN); break;
@@ -195,6 +208,8 @@ int main(void)
   
   pwm_init();
   
+  pid_loadFromEEPROM();
+
   num_temp_sensors_ = ds1820_discover();
   
   for(;;) 
@@ -213,6 +228,11 @@ int main(void)
     queryAndSaveTemperature(11);
     
     // PID control
+    // FIXME: if we do USB Input / Output (input especially) we delay PID controll too mauch
+    //              that's bad, since the routing requires that it be called at exact intervalls
+    //              maybe we should use a interrupt routine
+
+    setPeltierCoolingDirectionPower(pid_calc(raw_temp_));
     
     anyio_task();
   }

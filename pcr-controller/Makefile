@@ -22,7 +22,7 @@
 
 NAME := pcr-controller
 BOARD_TYPE := teensy2
-OBJ := $(NAME).o pwm.o
+OBJ := $(NAME).o pwm.o pid_control.o
 LIBS := util led lufa-descriptor-usbserial anyio onewire ds1820
 EXTERNAL_LIBS := lufa
 RESET_FUNC := ../tools/reset_lufa_cdc
