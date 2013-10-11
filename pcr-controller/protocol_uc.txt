@@ -1,0 +1,19 @@
+Command bytes:
+'s' Temperatursensor lesen -> string (float3.2) + \r\n
+'T' Temperatursoll setzen <- string (int(float(x)*16))
+'t' Temperatursoll lesen -> string (float3.2) + \r\n
+'P' P-Wert setzen <- string (uint16_t x * 1024)
+'p' Alle PID Werte ausgeben -> string (uint16_t)  + \r\n
+'I' I-Wert setzen <- string (uint16_t x * 1024)
+'i' Alle PID Werte ausgeben -> string (uint16_t)  + \r\n
+'D' D-Wert setzen <- string (uint16_t x * 1024)
+'d' Alle PID Werte ausgeben -> string (uint16_t p / 1024, i / 1024,  d / 1024)  + \r\n
+'A' Pumpe on
+'a' Pumpe off
+'B' Deckelheizung on
+'b' Deckelheizung off
+'L' LED (Debug) -> byte (0-255)
+'R' Reset (Alle Register zurücksetzen und neu initialisieren)
+
+Nach jedem Setz-Command: Bestätigung mit "OK\r\n" (oder so)
+'
