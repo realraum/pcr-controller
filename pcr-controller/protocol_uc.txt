@@ -15,10 +15,58 @@ Command bytes:
 'L' Toggle LED (Debug)
 'l' Toggle LED by using queuing system (Debug)
 'R' Reset (Alle Register zurücksetzen und neu initialisieren)
+'=' Halte aktuelle Temperatur (PID Ziel gleich aktuelle Temp messen)
 '-' Lösche gesetzte Temperaturkurve
 '+' Füge einen Punkt zur Temperaturkurve hinzu. erwartet Zieltemperatur und zeit (in10tel sekunden) für wie lange die temperatur gehalten werden soll bevor zur nächsten gesprungen wird. <- string(int(float(temp)*16)) \n <- string(int(seconds*10)) \n
 'Z' setzte Anzahl Zyklen in denen die Temperaturkurve wiederholt wird (0 == default == keine Wiederholung == 1 Zyklus, 1 == 1 Wiederholung == 2 Zyklen) <- string(int(repeats))
+'E' Temperatursoll das nach Ende des Temperaturkurvenzyklus gesetzt werden soll <- string (int(float(temp)*16))
 'm' Schalte ständige Ausgabe der aktuellen Temperatur ein/aus
 
 Nach jedem Setz-Command: Bestätigung mit "OK\r\n" (oder so)
-'
+
+
+
+Das folgende Beispiel
+fragt die Temperatur ab,
+löscht eine evtl gesetzte Temperaturkurve
+Hält für's Erste die aktuelle Temperatur
+Schaltet die Pumpe ein
+Programmiert eine Kurve von 95°C (15min) -> 65°C (1s) -> 60°C (30s) -> 70°C (30s)
+Wiederholt die Kurve 30 mal
+Kühlt die Proben nach dem Ende auf 5°C
+Gibt periodisch die aktuelle Temperatur aus.
+
+Example PCR:
+s
+-
+=
+A
+b
++
+1520
+9000
++
+1040
+10
++
+960
+300
++
+1120
+300
+Z
+30
+E
+80
+m
+
+
+Example uc Answers:
+{"cmd_ok":false,"error": "No DS1820 sensors on 1wire bus, thus no temperature"}
+{"cmd_ok":false,"error":"talking to DS18b20, no valid temperature!"}
+{"cmd_ok":true}
+{"t":503, "currtemp":20.34, "targettemp":-2048.00, "curve":false, "curve_t_elapsed":0, "cycles_left":0}  //curve and pid disabled  (pid disabel when targettemp == -2048.00
+{"t":97000, "currtemp":40.34, "targettemp":70.00, "curve":true, "curve_t_elapsed":14, "cycles_left":11}
+{"t":97200, "currtemp":69.72, "targettemp":70.00, "curve":true, "curve_t_elapsed":214, "cycles_left":11}
+{"t":110123, "currtemp":30.14, "targettemp":30.00, "curve":true, "curve_t_elapsed":10, "cycles_left":9}
+{"t":9999999, "currtemp":5.02, "targettemp":5.00, "curve":true, "curve_t_elapsed":65535, "cycles_left":0}   //we know all is finished because targettemp is hold-temp

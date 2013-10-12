@@ -29,6 +29,9 @@ void tcurve_reset(void);
 void tcurve_setRepeats(uint8_t r);
 uint8_t tcurve_isSet(void);
 uint8_t tcurve_hasFinished(void);
+uint16_t tcurve_getTimeElapsed(void);
+uint8_t tcurve_getRepeatsLeft(void);
+void tcurve_setPostCycleTargetTemp(int16_t v);
 void tcurve_add(int16_t temp, uint16_t hold_for_s);
 int16_t tcurve_getTempToSet(int16_t current_temp, uint16_t time_elapsed);
 

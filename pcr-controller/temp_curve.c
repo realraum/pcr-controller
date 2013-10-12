@@ -37,6 +37,8 @@ tc_entry *temp_curve_current_ = 0;
 uint16_t temp_stable_time_ = 0;
 
 uint8_t curve_num_repeats_ = 0;
+uint8_t temp_curve_finished_ = 0;
+int16_t post_cycle_target_temp_ = TCURVE_ERROR;
 
 void tcurve_reset(void)
 {
@@ -51,11 +53,22 @@ void tcurve_reset(void)
     temp_curve_end_ = 0;
     temp_curve_current_ = 0;
     curve_num_repeats_ = 0;
+    temp_curve_finished_ = 0;
 }
 
 uint8_t tcurve_hasFinished(void)
 {
-    return temp_curve_current_ == temp_curve_end_ && curve_num_repeats_ == 0;
+    return temp_curve_finished_;
+}
+
+uint16_t tcurve_getTimeElapsed(void)
+{
+    return temp_stable_time_;
+}
+
+uint8_t tcurve_getRepeatsLeft(void)
+{
+    return curve_num_repeats_;
 }
 
 uint8_t tcurve_isSet(void)
@@ -66,6 +79,12 @@ uint8_t tcurve_isSet(void)
 void tcurve_setRepeats(uint8_t r)
 {
     curve_num_repeats_ = r;
+    temp_curve_finished_ = 0;
+}
+
+void tcurve_setPostCycleTargetTemp(int16_t v)
+{
+    post_cycle_target_temp_ = v;
 }
 
 void tcurve_add(int16_t temp, uint16_t hold_for_ticks)
@@ -91,6 +110,9 @@ int16_t tcurve_getTempToSet(int16_t current_temp, uint16_t ticks_elapsed)
     if (temp_curve_current_ == 0)
         return TCURVE_ERROR;
 
+    if (temp_curve_finished_ && post_cycle_target_temp_ != TCURVE_ERROR)
+        return post_cycle_target_temp_;
+
     if (current_temp > temp_curve_current_->target_temp - temp_margin_ && current_temp < temp_curve_current_->target_temp + temp_margin_)
     {
         temp_stable_time_ += ticks_elapsed;
@@ -98,19 +120,20 @@ int16_t tcurve_getTempToSet(int16_t current_temp, uint16_t ticks_elapsed)
 
     // if time has been stable for long enough, advance to next
     // if there is no next, repeat curve until curve_num_repeats_ == 0
-    // once that happens, hold current temp forever
+    // once that happens, set to post_cycle_target_temp_ or hold last value
     if (temp_stable_time_ >= temp_curve_current_->hold_for_timeticks)
     {
+        temp_stable_time_ = 0;
         if (temp_curve_current_->next != 0)
         {
             temp_curve_current_ = temp_curve_current_->next;
-            temp_stable_time_ = 0;
         } else if (curve_num_repeats_)
         {
             //restart temp curve from the beginning
             temp_curve_current_ = temp_curve_;
             curve_num_repeats_--;
-        }
+        } else
+            temp_curve_finished_ = 1;
     }
     return temp_curve_current_->target_temp;
 }

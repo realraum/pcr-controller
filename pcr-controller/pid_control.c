@@ -61,7 +61,7 @@ void pid_setD(int16_t d)
 
 void pid_printVars(void)
 {
-    printf("PID P: %d /%d\r\nPID I: %d /%d\r\nPID D: %d /%d\r\n", (int16_t) (pid_p_), (int16_t) PID_SCALE, (int16_t) (pid_i_), (int16_t) PID_SCALE, (int16_t) (pid_d_), (int16_t) PID_SCALE);
+    printf("{\"PID_P\":%d, \"PID_I\":%d, \"PID_D\":%d, \"PID_SCALE\":%d}\r\n", (int16_t) (pid_p_), (int16_t) (pid_i_), (int16_t) (pid_d_), (int16_t) PID_SCALE);
 }
 
 void pid_setTargetValue(int16_t v)

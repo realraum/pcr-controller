@@ -129,20 +129,24 @@ void printRawTemp(int16_t raw_temp)
   printf("%d.%02d", raw_temp / 16, decimals);
 }
 
-void printTemperature(void)
+void printStatus(void)
 {
   if (num_temp_sensors_ == 0)
   {
-    printf("ERROR: No DS1820 sensors on 1wire bus, thus no temperature\r\n");
+    printf("{\"cmd_ok\":false,\"error\": \"No DS1820 sensors on 1wire bus, thus no temperature\"}\r\n");
     return;
   }
   if (raw_temp_ == DS1820_ERROR)
   {
-      printf("ERROR talking to DS18b20, no valid temperature!\r\n");
+      printf("{\"cmd_ok\":false,\"error\":\"talking to DS18b20, no valid temperature!\"}\r\n");
   } else {
-      printf("Temp: ");
+      printf("{\"t\":%lu, \"currtemp\":", system_clk_);
       printRawTemp(raw_temp_);
-      printf("\r\n");
+      printf(", \"targettemp\":");
+      printRawTemp(pid_getTargetValue());
+      printf(", \"curve\":%s", (tcurve_isSet()?"true":"false"));
+      printf(", \"curve_t_elapsed\":%u", tcurve_getTimeElapsed());
+      printf(", \"cycles_left\":%u}\r\n", tcurve_getRepeatsLeft());
   }
 }
 
@@ -203,14 +207,10 @@ void handle_cmd(uint8_t cmd)
   case 'm': monitor_temp_ = ~monitor_temp_; break;
   case '=': pid_setTargetValue(raw_temp_); break;
   case '#': pid_setTargetValue(PID_DISABLED); break;
-  case 's': printTemperature(); return;
+  case 't':
+  case 's': printStatus(); return;
   case 'L': led_toggle(); break;
   case 'l': cmdq_queueCmdWithNumArgs(led_toggle, 0); break;
-  case 't':
-    printf("TargetTemp: ");
-    printRawTemp(pid_getTargetValue());
-    printf("\r\n");
-    return;
   case 'p':
   case 'i':
   case 'd':
@@ -232,9 +232,10 @@ void handle_cmd(uint8_t cmd)
     cmdq_queueCmdWithNumArgs(tcurve_add, 2);
     break;
   case 'Z': cmdq_queueCmdWithNumArgs(tcurve_setRepeats, 1); break;
-  default: printf("ERROR\r\n"); return;
+  case 'E': cmdq_queueCmdWithNumArgs(tcurve_setPostCycleTargetTemp, 1); break;
+  default: printf("{\"cmd_ok\":false,\"error\":\"unknown cmd\"}\r\n"); return;
   }
-  printf("OK\r\n");
+  printf("{\"cmd_ok\":true}\r\n");
 }
 
 int main(void)
@@ -288,7 +289,7 @@ int main(void)
     queryAndSaveTemperature(11); //at 11bit resolution, this takes at least 390ms
 
     if (monitor_temp_)
-      printTemperature();
+      printStatus();
 
     if (tcurve_isSet())
     {
@@ -298,7 +299,7 @@ int main(void)
       pid_setTargetValue(tcurve_getTempToSet(raw_temp_, time_elapsed));
       if (debug_)
       {
-        printf("time: %lu, elapsed: %u, target_temp: %d\r\n", system_clk_, time_elapsed, pid_getTargetValue());
+        printf("t: %lu, elapsed: %u, target_temp: %d\r\n", system_clk_, time_elapsed, pid_getTargetValue());
       }
     }
 
