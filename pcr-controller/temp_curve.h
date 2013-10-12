@@ -1,5 +1,5 @@
 /*
- *  r3PCR Teensy Controller Code
+ *  rPCR Teensy Controller Code
  *
  *
  *  Copyright (C) 2013 Bernhard Tittelbach <xro@realraum.at>
@@ -18,22 +18,18 @@
  *  along with spreadspace avr utils. If not, see <http://www.gnu.org/licenses/>.
 */
 
-#ifndef PID_CONTROLLER_INCLUDE_H_
-#define PID_CONTROLLER_INCLUDE_H_
+#ifndef TEMP_CURVE_INCLUDE_H_
+#define TEMP_CURVE_INCLUDE_H_
 
-#include <stdio.h>
+#define TCURVE_ERROR (1<<15)
 
-#define PID_DISABLED (1<<15)
+#include <avr/io.h>
 
-void pid_setP(int16_t p);
-void pid_setI(int16_t i);
-void pid_setD(int16_t d);
-void pid_printVars(void);
-void pid_setTargetValue(int16_t v);
-int pid_isEnabled(void);
-int16_t pid_getTargetValue(void);
-int16_t pid_calc(int16_t current_value);
-void pid_loadFromEEPROM(void);
-void pid_saveToEEPROM(void);
+void tcurve_reset(void);
+void tcurve_setRepeats(uint8_t r);
+uint8_t tcurve_isSet(void);
+uint8_t tcurve_hasFinished(void);
+void tcurve_add(int16_t temp, uint16_t hold_for_s);
+int16_t tcurve_getTempToSet(int16_t current_temp, uint16_t time_elapsed);
 
 #endif

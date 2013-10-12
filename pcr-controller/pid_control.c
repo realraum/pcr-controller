@@ -1,8 +1,21 @@
 /*
- *  OpenPCR Teensy Controller Code
+ *  r3PCR Teensy Controller Code
  *
  *
  *  Copyright (C) 2013 Bernhard Tittelbach <xro@realraum.at>
+ *
+ *  This code is free software: you can redistribute it and/or modify
+ *  it under the terms of the GNU General Public License as published by
+ *  the Free Software Foundation, either version 3 of the License, or
+ *  any later version.
+ *
+ *  This code is distributed in the hope that it will be useful,
+ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *  GNU General Public License for more details.
+ *
+ *  You should have received a copy of the GNU General Public License
+ *  along with spreadspace avr utils. If not, see <http://www.gnu.org/licenses/>.
 */
 
 #include "pid_control.h"
@@ -53,7 +66,7 @@ void pid_printVars(void)
 
 void pid_setTargetValue(int16_t v)
 {
-    pid_target_value_ = v; 
+    pid_target_value_ = v;
 }
 
 int16_t pid_getTargetValue(void)
@@ -75,13 +88,13 @@ int16_t pid_calc(int16_t current_value)
     int32_t		error = pid_target_value_ - current_value;
     // derivative
     // instead of derivative of error we take derivative on measurement
-    // since dError/dt = - dInput/dt   (note the - )    
+    // since dError/dt = - dInput/dt   (note the - )
     int32_t		d_measure = current_value - pid_last_input_;
     pid_last_input_ = current_value;
 
     // integral (bring pid_i_ into integral, so we get smooth transfer if pid_i_ suddenly changes)
     pid_i_integralsum_ += pid_i_ * error;
-    
+
     // prevent integrator wind-up
     if (pid_i_integralsum_ > pid_outlimit_max_)
         pid_i_integralsum_ = pid_outlimit_max_;
@@ -92,7 +105,7 @@ int16_t pid_calc(int16_t current_value)
     int32_t pid_output_preclamp = (
         (error * pid_p_) + (pid_i_integralsum_) - (d_measure * pid_d_)
     );
-   
+
     // limit output
     if (pid_output_preclamp > pid_outlimit_max_)
         return (int16_t) (pid_outlimit_max_ / PID_SCALE);

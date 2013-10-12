@@ -1,7 +1,7 @@
 Command bytes:
-'s' Temperatursensor lesen -> string (float3.2) + \r\n
-'T' Temperatursoll setzen <- string (int(float(x)*16))
-'t' Temperatursoll lesen -> string (float3.2) + \r\n
+'s' Temperatursensor lesen -> parse_float(string("%3.2f")) + \r\n
+'T' Temperatursoll setzen <- string (int(float(temp)*16))
+'t' Temperatursoll lesen -> parse_float(string("%3.2f")) + \r\n
 'P' P-Wert setzen <- string (uint16_t x * 1024)
 'p' Alle PID Werte ausgeben -> string (uint16_t)  + \r\n
 'I' I-Wert setzen <- string (uint16_t x * 1024)
@@ -12,8 +12,13 @@ Command bytes:
 'a' Pumpe off
 'B' Deckelheizung on
 'b' Deckelheizung off
-'L' LED (Debug) -> byte (0-255)
+'L' Toggle LED (Debug)
+'l' Toggle LED by using queuing system (Debug)
 'R' Reset (Alle Register zurücksetzen und neu initialisieren)
+'-' Lösche gesetzte Temperaturkurve
+'+' Füge einen Punkt zur Temperaturkurve hinzu. erwartet Zieltemperatur und zeit (in10tel sekunden) für wie lange die temperatur gehalten werden soll bevor zur nächsten gesprungen wird. <- string(int(float(temp)*16)) \n <- string(int(seconds*10)) \n
+'Z' setzte Anzahl Zyklen in denen die Temperaturkurve wiederholt wird (0 == default == keine Wiederholung == 1 Zyklus, 1 == 1 Wiederholung == 2 Zyklen) <- string(int(repeats))
+'m' Schalte ständige Ausgabe der aktuellen Temperatur ein/aus
 
 Nach jedem Setz-Command: Bestätigung mit "OK\r\n" (oder so)
 '

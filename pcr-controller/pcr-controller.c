@@ -1,5 +1,5 @@
 /*
- *  OpenPCR Teensy Controller Code
+ *  r3PCR Teensy Controller Code
  *
  *
  *  Copyright (C) 2013 Bernhard Tittelbach <xro@realraum.at>
@@ -27,7 +27,6 @@
 #include <avr/interrupt.h>
 #include <avr/power.h>
 #include <stdio.h>
-#include <stdlib.h>
 
 #include "util.h"
 #include "led.h"
@@ -38,6 +37,8 @@
 
 #include "pwm.h"
 #include "pid_control.h"
+#include "temp_curve.h"
+#include "cmd_queue.h"
 
 #define PIN_HIGH(PORT, PIN) PORT |= (1 << PIN)
 #define PIN_LOW(PORT, PIN) PORT &= ~(1 << PIN)
@@ -61,6 +62,37 @@
 uint8_t num_temp_sensors_ = 0;
 int16_t raw_temp_ = 0;
 uint8_t debug_ = 0;
+uint8_t monitor_temp_ = 0;
+// at f_system_clk = 10Hz, system_clk_ will not overrun for at least 13 years. PCR won't run that long
+uint32_t system_clk_ = 0;
+
+//with F_CPU = 16MHz and TIMER3 Prescaler set to /1024, TIMER3 increments with f = 16KHz. Thus if TIMER3 reaches 16, 1ms has passed.
+#define T3_MS     *16
+//set TICK_TIME to 1/10 of a second
+#define	TICK_TIME (100 T3_MS)
+
+ISR(TIMER3_COMPA_vect)
+{
+  //increment system_clk every TIME_TICK (aka 100ms)
+	system_clk_++;
+  //set up "clock" comparator for next tick
+  OCR3A = (OCR3A + TICK_TIME) & 0xFFFF;
+}
+
+void initSysClkTimer3(void)
+{
+  system_clk_ = 0;
+  // set counter to 0
+  TCNT3 = 0x0000;
+	// no outputs
+	TCCR3A = 0;
+	// Prescaler for Timer3: F_CPU / 1024 -> counts with f= 16KHz ms
+	TCCR3B = _BV(CS32) | _BV(CS30);
+	// set up "clock" comparator for first tick
+	OCR3A = TICK_TIME & 0xFFFF;
+	// enable interrupt
+	TIMSK3 = _BV(OCIE3A);
+}
 
 void queryAndSaveTemperature(uint8_t bit_resolution)
 {
@@ -114,28 +146,28 @@ void printTemperature(void)
   }
 }
 
-void readIntoBuffer(char *buffer, uint8_t buflen)
-{
-  while (anyio_bytes_received() == 0);
-  int ReceivedByte=0;
-  do {
-    ReceivedByte = fgetc(stdin);
-    if (ReceivedByte != EOF)
-    {
-      *buffer = (char) ReceivedByte;
-      buffer++;
-      buflen --;
-    }
-  } while (ReceivedByte != '\n' && ReceivedByte != '\r' && buflen > 1);
-  *buffer = 0;
-}
+//~ void readIntoBuffer(char *buffer, uint8_t buflen)
+//~ {
+  //~ while (anyio_bytes_received() == 0);
+  //~ int ReceivedByte=0;
+  //~ do {
+    //~ ReceivedByte = fgetc(stdin);
+    //~ if (ReceivedByte != EOF)
+    //~ {
+      //~ *buffer = (char) ReceivedByte;
+      //~ buffer++;
+      //~ buflen --;
+    //~ }
+  //~ } while (ReceivedByte != '\n' && ReceivedByte != '\r' && buflen > 1);
+  //~ *buffer = 0;
+//~ }
 
-int16_t readNumber(void)
-{
-  char buffer[20];
-  readIntoBuffer(buffer, 20);
-  return atoi(buffer);
-}
+//~ int16_t readNumber(void)
+//~ {
+  //~ char buffer[20];
+  //~ readIntoBuffer(buffer, 20);
+  //~ return atoi(buffer);
+//~ }
 
 void setPeltierCoolingDirectionPower(int16_t value)
 {
@@ -143,7 +175,7 @@ void setPeltierCoolingDirectionPower(int16_t value)
     value = 255;
   if (value < -255)
     value = -255;
-  
+
   if (value >= 0)
   {
     PIN_HIGH(PORTF, PELTIER_INA);
@@ -152,7 +184,7 @@ void setPeltierCoolingDirectionPower(int16_t value)
   } else {
     PIN_LOW(PORTF, PELTIER_INA);
     PIN_HIGH(PORTB, PELTIER_INB);
-    pwm_set((uint8_t) (-1 * value)); 
+    pwm_set((uint8_t) (-1 * value));
   }
   if (debug_)
     printf("Peltier value: %d, INA: %d, INB: %d\r\n", value, (PORTF & _BV(PELTIER_INA)) > 0, (PORTB & _BV(PELTIER_INB)) > 0);
@@ -168,28 +200,38 @@ void handle_cmd(uint8_t cmd)
   case 'R':
   case 'r': reset2bootloader(); break;
   case '?': debug_ = ~debug_; break;
+  case 'm': monitor_temp_ = ~monitor_temp_; break;
   case '=': pid_setTargetValue(raw_temp_); break;
   case '#': pid_setTargetValue(PID_DISABLED); break;
   case 's': printTemperature(); return;
   case 'L': led_toggle(); break;
+  case 'l': cmdq_queueCmdWithNumArgs(led_toggle, 0); break;
   case 't':
     printf("TargetTemp: ");
     printRawTemp(pid_getTargetValue());
     printf("\r\n");
     return;
-  case 'p': 
+  case 'p':
   case 'i':
   case 'd':
     pid_printVars();
     return;
-  case 'T': pid_setTargetValue(readNumber()); break;
-  case 'P': pid_setP(readNumber()); break;
-  case 'I': pid_setI(readNumber()); break;
-  case 'D': pid_setD(readNumber()); break;
+  case 'T': cmdq_queueCmdWithNumArgs(pid_setTargetValue, 1); break;
+  case 'P': cmdq_queueCmdWithNumArgs(pid_setP, 1); break;
+  case 'I': cmdq_queueCmdWithNumArgs(pid_setI, 1); break;
+  case 'D': cmdq_queueCmdWithNumArgs(pid_setD, 1); break;
   case 'A': PIN_HIGH(PORTB, PUMP_PIN); break;
-  case 'a': PIN_LOW(PORTB, PUMP_PIN); break;  
+  case 'a': PIN_LOW(PORTB, PUMP_PIN); break;
   case 'B': PIN_HIGH(PORTD, TOPHEAT_PIN); break;
-  case 'b': PIN_LOW(PORTD, TOPHEAT_PIN); break;  
+  case 'b': PIN_LOW(PORTD, TOPHEAT_PIN); break;
+  case '-': //reset temp curve
+    tcurve_reset();
+    break;
+  case '+': //add temp curve entry
+    //~ tcurve_add(readNumber(), readNumber());
+    cmdq_queueCmdWithNumArgs(tcurve_add, 2);
+    break;
+  case 'Z': cmdq_queueCmdWithNumArgs(tcurve_setRepeats, 1); break;
   default: printf("ERROR\r\n"); return;
   }
   printf("OK\r\n");
@@ -214,15 +256,19 @@ int main(void)
   PINMODE_OUTPUT(DDRB, PELTIER_INB);
   PINMODE_OUTPUT(DDRF, PELTIER_INA);
   PINMODE_OUTPUT(DDRD, TOPHEAT_PIN);
-  
+
   pwm_init();
   pwm_set(0);
-  
+
   pid_loadFromEEPROM();
 
   num_temp_sensors_ = ds1820_discover();
-  
-  for(;;) 
+
+  uint32_t last_time = 0;
+  uint32_t last_time2 = 0;
+  initSysClkTimer3(); //start system clock
+
+  for(;;)
   {
     int16_t BytesReceived = anyio_bytes_received();
     while(BytesReceived > 0)
@@ -230,23 +276,44 @@ int main(void)
       int ReceivedByte = fgetc(stdin);
       if (ReceivedByte != EOF)
       {
-        handle_cmd(ReceivedByte);
+        // Ask cmdq_addCharToArgumentBuffer if it wants the current char, otherwise let handle_cmd() have it
+        if (cmdq_addCharToArgumentBuffer(ReceivedByte))
+          handle_cmd(ReceivedByte);
       }
       BytesReceived--;
     }
-    
-    queryAndSaveTemperature(11);
-    
-    // PID control
-    // FIXME: if we do USB Input / Output (input especially) we delay PID controll too mauch
-    //              that's bad, since the routing requires that it be called at exact intervalls
-    //              maybe we should use a interrupt routine
 
+    cmdq_doWork();  //may call queued functions
+
+    queryAndSaveTemperature(11); //at 11bit resolution, this takes at least 390ms
+
+    if (monitor_temp_)
+      printTemperature();
+
+    if (tcurve_isSet())
+    {
+      uint16_t time_elapsed = (uint16_t) (system_clk_ - last_time);
+      last_time = system_clk_;
+      //PID_DISABLED == TCURVE_ERROR so this works out fine and we disable heating and PID in this case
+      pid_setTargetValue(tcurve_getTempToSet(raw_temp_, time_elapsed));
+      if (debug_)
+      {
+        printf("time: %lu, elapsed: %u, target_temp: %d\r\n", system_clk_, time_elapsed, pid_getTargetValue());
+      }
+    }
+
+    // PID control
+    // make sure this is called at exact periodic intervals (i.e. make sure there are no large variable delays in for loop)
+    // e.g. enable periodic temp monitoring 'm' rather than querying temp at some intervall 's'
     if (pid_isEnabled())
     {
+      while (system_clk_ - last_time2 < 5 * TICK_TIME); //wait until at least 500ms have passed since last time. Should be enough time for everything else to finish. (after 13 years, code will hang here)
+      last_time2 = system_clk_;
       setPeltierCoolingDirectionPower(pid_calc(raw_temp_));
     }
-    
+    else
+      setPeltierCoolingDirectionPower(0);
+
     anyio_task();
   }
 }
