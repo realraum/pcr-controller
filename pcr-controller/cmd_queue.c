@@ -19,59 +19,61 @@
 */
 
 #include <stdlib.h>
+#include <stdio.h>
 #include "cmd_queue.h"
 
+//static assert:
+//~ static int SDFLKJ[sizeof(int) == sizeof(int16_t)] = { 0 };
+
+#define CMDQ_INPUT_LIST_LEN  2
 
 typedef struct {
-    uint8_t read_num_numbers;
+    uint8_t num_args;
     void* function_ptr;
+    int16_t input_list[CMDQ_INPUT_LIST_LEN];
+    uint8_t num_args_read;
 } cmd_queue_item;
 
 #define CMQ_QUEUE_LENGTH 4
 cmd_queue_item cmd_queue_[CMQ_QUEUE_LENGTH];
 uint8_t cmd_queue_todo_pos_ = 0;
+uint8_t cmd_queue_fillargs_pos_ = 0;
 uint8_t cmd_queue_next_here_ = 0;
 
-#define CMDQ_INPUT_LIST_LEN  2
-int16_t input_list_[CMDQ_INPUT_LIST_LEN];
-uint8_t num_args_read_ = 0;
+
 
 #define CMDQ_READBUFFER_LEN  20
 char cmdq_readbuffer_[CMDQ_READBUFFER_LEN];
-char *cmdq_readbuffer_pos_ = cmdq_readbuffer_;
-char *const cmdq_readbuffer_end_ = cmdq_readbuffer_ + (CMDQ_READBUFFER_LEN - 1);
+uint8_t cmdq_readbuffer_pos_ = 0;
 
 inline void cmdq_finishReadingArgument(void)
 {
-    *cmdq_readbuffer_pos_ = '\0';
-    cmdq_readbuffer_pos_ = cmdq_readbuffer_;
-    input_list_[num_args_read_++] = atoi(cmdq_readbuffer_);
+    cmdq_readbuffer_[cmdq_readbuffer_pos_] = '\0';
+    cmdq_readbuffer_pos_ = 0;
+    cmd_queue_[cmd_queue_fillargs_pos_].input_list[cmd_queue_[cmd_queue_fillargs_pos_].num_args_read++] = atoi(cmdq_readbuffer_);
 }
 
 //call regularily if in state CQ_READING
 uint8_t cmdq_addCharToArgumentBuffer(uint8_t c)
 {
     if ( cmd_queue_todo_pos_ == cmd_queue_next_here_ )
-        return 1; //nothing to do with us
-    if (num_args_read_ >= CMDQ_INPUT_LIST_LEN)
+        return 1; //nothing to do with us, since no cmd's queued
+    if (cmd_queue_[cmd_queue_fillargs_pos_].num_args_read >= CMDQ_INPUT_LIST_LEN)
         return 1;  //nothing to do with us
-    if (num_args_read_ >= cmd_queue_[cmd_queue_todo_pos_].read_num_numbers )
+    if (cmd_queue_[cmd_queue_fillargs_pos_].num_args_read >= cmd_queue_[cmd_queue_fillargs_pos_].num_args )
         return 1;  //nothing to do with us
-
     //if input terminated by \n or \r then addArgument
-    if (c == '\n' || c == '\r')
+    if (c == '\n' || c == '\r'  || c == ',' || c == 0x1B)
     {
         cmdq_finishReadingArgument();
         return 0;
     } else {    //continue reading
-        *cmdq_readbuffer_pos_ = (char) c;
-        cmdq_readbuffer_pos_++;
+        cmdq_readbuffer_[cmdq_readbuffer_pos_++] = (char) c;
     }
-    //if numlen of readbuffer reached, addArgument as well
-    if (cmdq_readbuffer_pos_ == cmdq_readbuffer_end_)
+    //if numlen +1 of readbuffer reached, addArgument as well (leave one char free to terminate with \0)
+    if (cmdq_readbuffer_pos_ +1 >= CMDQ_READBUFFER_LEN)
     {
         cmdq_finishReadingArgument();
-        return 0;
     }
     return 0;
 }
@@ -79,35 +81,47 @@ uint8_t cmdq_addCharToArgumentBuffer(uint8_t c)
 void cmdq_queueCmdWithNumArgs(void* fptr, uint8_t num_args)
 {
     if (num_args > CMDQ_INPUT_LIST_LEN)
+    {
+        printf("{\"cmd_ok\":false,\"error\":\"max args == %d\"}\r\n", CMDQ_INPUT_LIST_LEN);
         return; //can't do that Would hang cmdq
-    cmd_queue_[cmd_queue_next_here_].read_num_numbers=num_args;
-    cmd_queue_[cmd_queue_next_here_].function_ptr=fptr;
+    }
+    if ((cmd_queue_next_here_ +1) % CMQ_QUEUE_LENGTH == cmd_queue_todo_pos_) //for this check REQUIRED: CMQ_QUEUE_LENGTH > 2
+        cmdq_doWork(); //no more space in queue -> execute now !
+    cmd_queue_[cmd_queue_next_here_].num_args = num_args;
+    cmd_queue_[cmd_queue_next_here_].function_ptr = fptr;
+    cmd_queue_[cmd_queue_next_here_].num_args_read = 0;
+    cmd_queue_fillargs_pos_ = cmd_queue_next_here_;
     cmd_queue_next_here_++;
     cmd_queue_next_here_ %= CMQ_QUEUE_LENGTH;
 }
 
 void cmdq_doWork(void)
 {
-    if ( cmd_queue_todo_pos_ == cmd_queue_next_here_ )
-        return;
-
-    // is num_args_read_ now equal to num args we expect ?
-    if (num_args_read_ == cmd_queue_[cmd_queue_todo_pos_].read_num_numbers )
+    while ( cmd_queue_todo_pos_ != cmd_queue_next_here_ )
     {
-        switch (num_args_read_)
+        // is num_args_read_ now equal to num args we expect ?
+        if (cmd_queue_[cmd_queue_todo_pos_].num_args_read != cmd_queue_[cmd_queue_todo_pos_].num_args )
+            break;
+        if (cmd_queue_[cmd_queue_todo_pos_].function_ptr == 0 )
+            break;
+
+        switch (cmd_queue_[cmd_queue_todo_pos_].num_args)
         {
             case 0:
                 ((void(*)(void)) cmd_queue_[cmd_queue_todo_pos_].function_ptr)();
                 break;
             case 1:
-                ((void(*)(int16_t)) cmd_queue_[cmd_queue_todo_pos_].function_ptr)(input_list_[0]);
+                ((void(*)(int16_t)) cmd_queue_[cmd_queue_todo_pos_].function_ptr)(cmd_queue_[cmd_queue_todo_pos_].input_list[0]);
                 break;
             case 2:
-                ((void(*)(int16_t,int16_t)) cmd_queue_[cmd_queue_todo_pos_].function_ptr)(input_list_[0], input_list_[1]);
+                ((void(*)(int16_t,int16_t)) cmd_queue_[cmd_queue_todo_pos_].function_ptr)(cmd_queue_[cmd_queue_todo_pos_].input_list[0], cmd_queue_[cmd_queue_todo_pos_].input_list[1]);
                 break;
         }
-        num_args_read_ = 0;
+        cmd_queue_[cmd_queue_todo_pos_].num_args_read = 0;
+        cmd_queue_[cmd_queue_todo_pos_].num_args = 0;
+        cmd_queue_[cmd_queue_todo_pos_].function_ptr = 0;
         cmd_queue_todo_pos_++;
         cmd_queue_todo_pos_ %= CMQ_QUEUE_LENGTH;
+        printf("{\"cmd_ok\":true}\r\n");
     }
 }

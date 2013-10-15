@@ -23,6 +23,13 @@
 
 #include <avr/io.h>
 
+/* The only actual reason for this queue is to enable non-blocking reads.
+*  I.e. we want to avoid blocking the main loop while waiting on a user-input terminating '\n', '\r' or ',' .
+* As we could (and DO if the queue is full) execute a command right away once all arguments have been read,
+* the queue really does not need to be 4 long and the whole handling could me much much simpler.
+* I.e. only ever remember ONE command and execute it as soon as all args are present!
+*/
+
 uint8_t cmdq_addCharToArgumentBuffer(uint8_t c);
 void cmdq_queueCmdWithNumArgs(void* fptr, uint8_t num_args);
 void cmdq_doWork(void);

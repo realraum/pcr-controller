@@ -85,12 +85,12 @@ int16_t pid_calc(int16_t current_value)
     if (pid_target_value_ == PID_DISABLED)
         return PID_DISABLED;
 
-    int32_t		error = pid_target_value_ - current_value;
+    int32_t		error = (int32_t) pid_target_value_ - (int32_t) current_value;
     // derivative
     // instead of derivative of error we take derivative on measurement
     // since dError/dt = - dInput/dt   (note the - )
-    int32_t		d_measure = current_value - pid_last_input_;
-    pid_last_input_ = current_value;
+    int32_t		d_measure = (int32_t) current_value - pid_last_input_;
+    pid_last_input_ = (int32_t) current_value;
 
     // integral (bring pid_i_ into integral, so we get smooth transfer if pid_i_ suddenly changes)
     pid_i_integralsum_ += pid_i_ * error;

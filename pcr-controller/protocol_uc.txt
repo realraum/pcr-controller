@@ -1,72 +1,110 @@
-Command bytes:
-'s' Temperatursensor lesen -> parse_float(string("%3.2f")) + \r\n
-'T' Temperatursoll setzen <- string (int(float(temp)*16))
-'t' Temperatursoll lesen -> parse_float(string("%3.2f")) + \r\n
-'P' P-Wert setzen <- string (uint16_t x * 1024)
-'p' Alle PID Werte ausgeben -> string (uint16_t)  + \r\n
-'I' I-Wert setzen <- string (uint16_t x * 1024)
-'i' Alle PID Werte ausgeben -> string (uint16_t)  + \r\n
-'D' D-Wert setzen <- string (uint16_t x * 1024)
-'d' Alle PID Werte ausgeben -> string (uint16_t p / 1024, i / 1024,  d / 1024)  + \r\n
-'A' Pumpe on
-'a' Pumpe off
-'B' Deckelheizung on
-'b' Deckelheizung off
-'L' Toggle LED (Debug)
-'l' Toggle LED by using queuing system (Debug)
-'R' Reset (Alle Register zurücksetzen und neu initialisieren)
-'=' Halte aktuelle Temperatur (PID Ziel gleich aktuelle Temp messen)
-'-' Lösche gesetzte Temperaturkurve
-'+' Füge einen Punkt zur Temperaturkurve hinzu. erwartet Zieltemperatur und zeit (in10tel sekunden) für wie lange die temperatur gehalten werden soll bevor zur nächsten gesprungen wird. <- string(int(float(temp)*16)) \n <- string(int(seconds*10)) \n
-'Z' setzte Anzahl Zyklen in denen die Temperaturkurve wiederholt wird (0 == default == keine Wiederholung == 1 Zyklus, 1 == 1 Wiederholung == 2 Zyklen) <- string(int(repeats))
-'E' Temperatursoll das nach Ende des Temperaturkurvenzyklus gesetzt werden soll <- string (int(float(temp)*16))
-'m' Schalte ständige Ausgabe der aktuellen Temperatur ein/aus
-
-Nach jedem Setz-Command: Bestätigung mit "OK\r\n" (oder so)
-
-
-
-Das folgende Beispiel
-fragt die Temperatur ab,
-löscht eine evtl gesetzte Temperaturkurve
-Hält für's Erste die aktuelle Temperatur
-Schaltet die Pumpe ein
-Programmiert eine Kurve von 95°C (15min) -> 65°C (1s) -> 60°C (30s) -> 70°C (30s)
-Wiederholt die Kurve 30 mal
-Kühlt die Proben nach dem Ende auf 5°C
-Gibt periodisch die aktuelle Temperatur aus.
-
-Example PCR:
-s
--
-=
-A
-b
-+
-1520
-9000
-+
-1040
-10
-+
-960
-300
-+
-1120
-300
-Z
-30
-E
-80
-m
+==== Command bytes ====
+'s'		Temperatursensor lesen -> parse_float(string("%3.2f")) + \r\n
+'t'		Same as above
+'T'		Set PID target temperature.  <-TempValue
+		(Only works if no temperature curve is set.)
+'P'		Set PID value P  <-PIDValue
+'I'		Set PID value I  <-PIDValue
+'D'		Set PID value D  <-PIDValue
+'p'		Print all PID values as JSON string
+'i'		Same as above
+'d'		Same as above
+'A'		Switch on pump.
+'a'		Switch pump off.
+'B'		Switch on top heater.
+'b'		Switch top heater off.
+'L'		Toggle LED (Debug)
+'l'		Toggle LED by using queuing system (Debug)
+'R'		Reset microcontroller
+'r'		Same as above
+'='		Set PID target temperature to current temperature.
+'-'		Clear temperature curve.
+'.'		Print out currently programmed temperature curve as JSON string.
+'+'		Add a temperature curve point.  <-TempValue <-Duration
+		Excpects 2 arguments: Targettemperature and duration for which that temperature is to be held after it has been reached.
+'!'		Set the last added (with '+') temperature curve point to be the cycle start point. 
+        E.g. if >0 curve repetitions are set (with 'Z') the repetitions will start here, instead of at the first added curve point.
+'Z'		Set number of cycle repetitions  <-IntValue
+		E.g:	0 == default == no repetitions == 1 cycle
+				1 == 1 repetitions == 2 cycles)
+				....
+'E'		Program a final hold temperature. PID will try to hold this value after all cycles have finished.  <-TempValue
+'m'		Toggle periodic status output as JSON string.
+'?'		Toggle Debug Output.
+'#'     Disable PID (i.e. set PID target temperature to -2048.00)
+		(Only works if no temperature curve is set. If needed use '-' first.)
 
 
-Example uc Answers:
-{"cmd_ok":false,"error": "No DS1820 sensors on 1wire bus, thus no temperature"}
-{"cmd_ok":false,"error":"talking to DS18b20, no valid temperature!"}
-{"cmd_ok":true}
+==== Command arguments ====
+If arguments are required they are to be given as numeric string.
+
+Temperature is given in degrees celcsius multiplied by 16, thus allowing us to set decimal degrees by storing and transmitting integer values.
+Negative temperatures are prepended by '-'.
+E.g. a temperature of -20 °C would be input as -320.
+
+PID parpameters are multiplied by 1024 (or whatever PID_SCALE is set to).
+E.g. an I value of 0.5 would be input as 512.
+
+Duration or time values are input as 100ms (1/10th second) integer values.
+E.g. a duration of 2 seconds would be input as 20.
+
+If multiple arguments are required, they are to be separated by the comma character ','.
+
+<-IntValue	...means: string(uint16_t x)
+<-TempValue ...means: string(int16_t(float temp * 16))
+<-PIDValue  ...means: string(uint16_t x * 1024)
+<-Duration  ...means: string(uint16_t s * 10)
+
+
+==== Command responses ====
+are formated as JSON values.
+PID Values are output just like they are expected to be input.
+Temperatures are output as formated float values in °C, expect when printing the current temperature curve when temperatures are printed as internal integer values (see TempValue)
+
+A value of -2048.00 or -32768 generally means something is DISABLED or inapplicable in the current state.
+
+
+==== Example uc Answers ====
+Responses to "t" or "s":
 {"t":503, "currtemp":20.34, "targettemp":-2048.00, "curve":false, "curve_t_elapsed":0, "cycles_left":0}  //curve and pid disabled  (pid disabel when targettemp == -2048.00
 {"t":97000, "currtemp":40.34, "targettemp":70.00, "curve":true, "curve_t_elapsed":14, "cycles_left":11}
 {"t":97200, "currtemp":69.72, "targettemp":70.00, "curve":true, "curve_t_elapsed":214, "cycles_left":11}
 {"t":110123, "currtemp":30.14, "targettemp":30.00, "curve":true, "curve_t_elapsed":10, "cycles_left":9}
 {"t":9999999, "currtemp":5.02, "targettemp":5.00, "curve":true, "curve_t_elapsed":65535, "cycles_left":0}   //we know all is finished because targettemp is hold-temp
+
+Response to "."
+{"curve":[{"temp":1520,"duration":9000,"is_curr":1,"is_loop_start":1},{"temp":1040,"duration":10,"is_curr":0,"is_loop_start":0},{"temp":960,"duration":300,"is_curr":0,"is_loop_start":0},{"temp":1120,"duration":300,"is_curr":0,"is_loop_start":0},0],"end_temp:":80}
+
+Response to other commands:
+{"cmd_ok":false,"error": "No DS1820 sensors on 1wire bus, thus no temperature"}
+{"cmd_ok":false,"error":"talking to DS18b20, no valid temperature!"}
+{"cmd_ok":true}
+
+
+==== Example Program ====
+s
+-
+=
+A
+b
++1520,9000
++1040,10
+!
++960,300
++1120,300
+Z30
+E80
+m
+
+The sequence of above commands
+- prints current temperature
+- deletes any currenlty set temperature curve
+- instructs the PID controller to hold the current temperature
+- enables the pump
+- programms the following temperature curve: 95°C (15min) -> [ ->  65°C (1s) -> 60°C (30s) -> 70°C (30s) ]
+- sets the curve to repeat the items in [] brackets 30 times
+- programms final holding temperature of 5°C (after temperature curve and all cylces have finished).
+- activates periodic status output.
+
+
+(c) Bernhard Tittelbach, 2013

@@ -53,23 +53,42 @@
 #define HIGHv OP_SETBIT
 #define LOWv OP_CLEARBIT
 
-#define PUMP_PIN PINB3
-#define PELTIER_INA  PINF7
-#define PELTIER_INB  PINB6
-#define PELETIER_PWM_EN PINB5
+#define PELTIER_INA_PIN  PINF7
+#define PELTIER_INA_PORT  PORTF
+#define PELTIER_INA_DDR  DDRF
+
+#define PELTIER_INB_PIN  PINB6
+#define PELTIER_INB_PORT  PORTB
+#define PELTIER_INB_DDR  DDRB
+
+#define PELETIER_PWM_EN_PIN PINB5
+#define PELETIER_PWM_EN_PORT PORTB
+#define PELETIER_PWM_EN_DDR DDRB
+
 #define TOPHEAT_PIN PIND7
+#define TOPHEAT_PORT PORTD
+#define TOPHEAT_DDR DDRD
+
+#define PUMP_PIN PINC6
+#define PUMP_PORT PORTC
+#define PUMP_DDR DDRC
+
+#define ONEWIRE_PIN PINC7
+#define ONEWIRE_PINBASE PINC
 
 uint8_t num_temp_sensors_ = 0;
 int16_t raw_temp_ = 0;
+uint8_t temp_is_fresh_ = 0;
 uint8_t debug_ = 0;
 uint8_t monitor_temp_ = 0;
 // at f_system_clk = 10Hz, system_clk_ will not overrun for at least 13 years. PCR won't run that long
-uint32_t system_clk_ = 0;
+volatile uint32_t system_clk_ = 0;
 
 //with F_CPU = 16MHz and TIMER3 Prescaler set to /1024, TIMER3 increments with f = 16KHz. Thus if TIMER3 reaches 16, 1ms has passed.
 #define T3_MS     *16
 //set TICK_TIME to 1/10 of a second
-#define	TICK_TIME (100 T3_MS)
+#define SYSCLKTICK_DURATION_IN_MS 100
+#define	TICK_TIME (SYSCLKTICK_DURATION_IN_MS T3_MS)
 
 ISR(TIMER3_COMPA_vect)
 {
@@ -77,6 +96,8 @@ ISR(TIMER3_COMPA_vect)
 	system_clk_++;
   //set up "clock" comparator for next tick
   OCR3A = (OCR3A + TICK_TIME) & 0xFFFF;
+  if (debug_)
+    led_toggle();
 }
 
 void initSysClkTimer3(void)
@@ -96,6 +117,7 @@ void initSysClkTimer3(void)
 
 void queryAndSaveTemperature(uint8_t bit_resolution)
 {
+    static uint32_t conversion_start_time = 0;
     uint8_t sensor_index = 0;
 
     if (num_temp_sensors_ == 0)
@@ -103,21 +125,31 @@ void queryAndSaveTemperature(uint8_t bit_resolution)
         num_temp_sensors_ = ds1820_discover();
     }
 
-    for (sensor_index=0; sensor_index < num_temp_sensors_; sensor_index++)
+    if (conversion_start_time == 0)
     {
-        ds1820_set_resolution(sensor_index, bit_resolution);
-        ds1820_start_measuring(sensor_index);
-    }
-
-    ds1820_wait_conversion_time(bit_resolution);
-
-    for (sensor_index=0; sensor_index < num_temp_sensors_; sensor_index++)
+      // -- trigger temperatur conversion in sensor
+      for (sensor_index=0; sensor_index < num_temp_sensors_; sensor_index++)
+      {
+          ds1820_set_resolution(sensor_index, bit_resolution);
+          ds1820_start_measuring(sensor_index);
+      }
+      conversion_start_time = system_clk_;
+      // -- end trigger
+    } else
+    if ( (system_clk_ - conversion_start_time)*SYSCLKTICK_DURATION_IN_MS > ds1820_get_conversion_time_ms(bit_resolution))
     {
-        raw_temp_ = ds1820_read_temperature(sensor_index);
-        if (raw_temp_ != DS1820_ERROR)
-        {
-            break; //we need only one successfully read value
-        }
+      // -- receive temperatur after conversion time has passed
+      for (sensor_index=0; sensor_index < num_temp_sensors_; sensor_index++)
+      {
+          raw_temp_ = ds1820_read_temperature(sensor_index);
+          if (raw_temp_ != DS1820_ERROR)
+          {
+              temp_is_fresh_ = 1;
+              break; //we need only one successfully read value
+          }
+      }
+      conversion_start_time = 0;
+      // -- end receive
     }
 }
 
@@ -182,16 +214,16 @@ void setPeltierCoolingDirectionPower(int16_t value)
 
   if (value >= 0)
   {
-    PIN_HIGH(PORTF, PELTIER_INA);
-    PIN_LOW(PORTB, PELTIER_INB);
+    PIN_HIGH(PELTIER_INA_PORT, PELTIER_INA_PIN);
+    PIN_LOW(PELTIER_INB_PORT, PELTIER_INB_PIN);
     pwm_set((uint8_t) value);
   } else {
-    PIN_LOW(PORTF, PELTIER_INA);
-    PIN_HIGH(PORTB, PELTIER_INB);
+    PIN_LOW(PELTIER_INA_PORT, PELTIER_INA_PIN);
+    PIN_HIGH(PELTIER_INB_PORT, PELTIER_INB_PIN);
     pwm_set((uint8_t) (-1 * value));
   }
   if (debug_)
-    printf("Peltier value: %d, INA: %d, INB: %d\r\n", value, (PORTF & _BV(PELTIER_INA)) > 0, (PORTB & _BV(PELTIER_INB)) > 0);
+    printf("Peltier value: %d, INA: %d, INB: %d\r\n", value, (PELTIER_INA_PORT & _BV(PELTIER_INA_PIN)) > 0, (PELTIER_INB_PORT & _BV(PELTIER_INB_PIN)) > 0);
 }
 
 void handle_cmd(uint8_t cmd)
@@ -210,29 +242,31 @@ void handle_cmd(uint8_t cmd)
   case 't':
   case 's': printStatus(); return;
   case 'L': led_toggle(); break;
-  case 'l': cmdq_queueCmdWithNumArgs(led_toggle, 0); break;
+  case 'l': cmdq_queueCmdWithNumArgs((void*) led_toggle, 0); return;
   case 'p':
   case 'i':
   case 'd':
     pid_printVars();
     return;
-  case 'T': cmdq_queueCmdWithNumArgs(pid_setTargetValue, 1); break;
-  case 'P': cmdq_queueCmdWithNumArgs(pid_setP, 1); break;
-  case 'I': cmdq_queueCmdWithNumArgs(pid_setI, 1); break;
-  case 'D': cmdq_queueCmdWithNumArgs(pid_setD, 1); break;
-  case 'A': PIN_HIGH(PORTB, PUMP_PIN); break;
-  case 'a': PIN_LOW(PORTB, PUMP_PIN); break;
-  case 'B': PIN_HIGH(PORTD, TOPHEAT_PIN); break;
-  case 'b': PIN_LOW(PORTD, TOPHEAT_PIN); break;
+  case 'T': cmdq_queueCmdWithNumArgs((void*) pid_setTargetValue, 1); return;
+  case 'P': cmdq_queueCmdWithNumArgs((void*) pid_setP, 1); return;
+  case 'I': cmdq_queueCmdWithNumArgs((void*) pid_setI, 1); return;
+  case 'D': cmdq_queueCmdWithNumArgs((void*) pid_setD, 1); return;
+  case 'A': PIN_HIGH(PUMP_PORT, PUMP_PIN); break;
+  case 'a': PIN_LOW(PUMP_PORT, PUMP_PIN); break;
+  case 'B': PIN_HIGH(TOPHEAT_PORT, TOPHEAT_PIN); break;
+  case 'b': PIN_LOW(TOPHEAT_PORT, TOPHEAT_PIN); break;
+  case '.': tcurve_printCurve(); return;
   case '-': //reset temp curve
     tcurve_reset();
     break;
   case '+': //add temp curve entry
     //~ tcurve_add(readNumber(), readNumber());
-    cmdq_queueCmdWithNumArgs(tcurve_add, 2);
-    break;
-  case 'Z': cmdq_queueCmdWithNumArgs(tcurve_setRepeats, 1); break;
-  case 'E': cmdq_queueCmdWithNumArgs(tcurve_setPostCycleTargetTemp, 1); break;
+    cmdq_queueCmdWithNumArgs((void*) tcurve_add, 2);
+    return;
+  case '!': cmdq_queueCmdWithNumArgs((void*) tcurve_setRepeatStartPosToLatestEntry, 0); return;
+  case 'Z': cmdq_queueCmdWithNumArgs((void*) tcurve_setRepeats, 1); return;
+  case 'E': cmdq_queueCmdWithNumArgs((void*) tcurve_setPostCycleTargetTemp, 1); return;
   default: printf("{\"cmd_ok\":false,\"error\":\"unknown cmd\"}\r\n"); return;
   }
   printf("{\"cmd_ok\":true}\r\n");
@@ -250,13 +284,13 @@ int main(void)
   sei();
 
   led_off();
-  owi_init(PINC7, &PINC);
-  PINMODE_OUTPUT(DDRB, PUMP_PIN);
-  PIN_LOW(PORTB, PUMP_PIN);
-  PINMODE_OUTPUT(DDRB, PELETIER_PWM_EN);
-  PINMODE_OUTPUT(DDRB, PELTIER_INB);
-  PINMODE_OUTPUT(DDRF, PELTIER_INA);
-  PINMODE_OUTPUT(DDRD, TOPHEAT_PIN);
+  owi_init(ONEWIRE_PIN, &ONEWIRE_PINBASE);
+  PINMODE_OUTPUT(PUMP_DDR, PUMP_PIN);
+  PIN_LOW(PUMP_PORT, PUMP_PIN);
+  PINMODE_OUTPUT(PELETIER_PWM_EN_DDR, PELETIER_PWM_EN_PIN);
+  PINMODE_OUTPUT(PELTIER_INB_DDR, PELTIER_INB_PIN);
+  PINMODE_OUTPUT(PELTIER_INA_DDR, PELTIER_INA_PIN);
+  PINMODE_OUTPUT(TOPHEAT_DDR, TOPHEAT_PIN);
 
   pwm_init();
   pwm_set(0);
@@ -286,34 +320,40 @@ int main(void)
 
     cmdq_doWork();  //may call queued functions
 
-    queryAndSaveTemperature(11); //at 11bit resolution, this takes at least 390ms
+    queryAndSaveTemperature(11); //at 11bit resolution
 
-    if (monitor_temp_)
-      printStatus();
-
-    if (tcurve_isSet())
+    if (temp_is_fresh_)
     {
-      uint16_t time_elapsed = (uint16_t) (system_clk_ - last_time);
-      last_time = system_clk_;
-      //PID_DISABLED == TCURVE_ERROR so this works out fine and we disable heating and PID in this case
-      pid_setTargetValue(tcurve_getTempToSet(raw_temp_, time_elapsed));
-      if (debug_)
+      temp_is_fresh_ = 0; //once used, temp is used up ;->
+
+      if (monitor_temp_)
+        printStatus();
+
+      if (tcurve_isSet())
       {
-        printf("t: %lu, elapsed: %u, target_temp: %d\r\n", system_clk_, time_elapsed, pid_getTargetValue());
+        uint16_t time_elapsed = (uint16_t) (system_clk_ - last_time);
+        last_time = system_clk_;
+        //PID_DISABLED == TCURVE_ERROR so this works out fine and we disable heating and PID in this case
+        pid_setTargetValue(tcurve_getTempToSet(raw_temp_, time_elapsed));
       }
-    }
 
-    // PID control
-    // make sure this is called at exact periodic intervals (i.e. make sure there are no large variable delays in for loop)
-    // e.g. enable periodic temp monitoring 'm' rather than querying temp at some intervall 's'
-    if (pid_isEnabled())
-    {
-      while (system_clk_ - last_time2 < 5 * TICK_TIME); //wait until at least 500ms have passed since last time. Should be enough time for everything else to finish. (after 13 years, code will hang here)
-      last_time2 = system_clk_;
-      setPeltierCoolingDirectionPower(pid_calc(raw_temp_));
+      // PID control
+      // make sure this is called at exact periodic intervals (i.e. make sure there are no large variable delays in for loop)
+      // e.g. enable periodic temp monitoring 'm' rather than querying temp at some intervall 's'
+      if (pid_isEnabled())
+      {
+        if (debug_)
+          printf("pid_calc..");
+        while (system_clk_ - last_time2 < 5); //wait until at least 500ms have passed since last time. Should be enough time for everything else to finish. (after 13 years, code will hang here)
+        if (debug_)
+          printf(" clk: %lu, elaps: %lu\r\n",system_clk_ , system_clk_ - last_time2);
+        last_time2 = system_clk_;
+        temp_is_fresh_ = 0;
+        setPeltierCoolingDirectionPower(pid_calc(raw_temp_));
+      }
+      else
+        setPeltierCoolingDirectionPower(0);
     }
-    else
-      setPeltierCoolingDirectionPower(0);
 
     anyio_task();
   }

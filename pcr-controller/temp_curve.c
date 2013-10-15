@@ -20,6 +20,9 @@
 
 #include "temp_curve.h"
 #include <stdlib.h>
+#include <stdio.h>
+
+extern uint8_t debug_;
 
 const int16_t temp_margin_ = 8; // 0.5 °C
 
@@ -33,6 +36,7 @@ struct tc_entry {
 tc_entry *temp_curve_ = 0;
 tc_entry *temp_curve_end_ = 0;
 tc_entry *temp_curve_current_ = 0;
+tc_entry *temp_curve_restart_pos_ = 0;
 
 uint16_t temp_stable_time_ = 0;
 
@@ -45,15 +49,22 @@ void tcurve_reset(void)
     tc_entry *curr = temp_curve_;
     tc_entry *next = 0;
     while (curr != 0) {
-        next = temp_curve_->next;
+        next = curr->next;
+        if (debug_)
+            printf("tcreset: curr: 0x%x, next: 0x%x, end: 0x%x\r\n",(uint16_t)curr,(uint16_t)next,(uint16_t)temp_curve_end_);
         free(curr);
+        if (curr == temp_curve_end_)
+            break; //just to be sure
         curr = next;
     }
     temp_curve_ = 0;
     temp_curve_end_ = 0;
     temp_curve_current_ = 0;
     curve_num_repeats_ = 0;
+    temp_curve_restart_pos_ = temp_curve_;
     temp_curve_finished_ = 0;
+    if (debug_)
+        printf("tcreset: done\n\n");
 }
 
 uint8_t tcurve_hasFinished(void)
@@ -99,10 +110,33 @@ void tcurve_add(int16_t temp, uint16_t hold_for_ticks)
         temp_curve_end_ = new_entry;
         temp_curve_ = new_entry;
         temp_curve_current_ = new_entry;
+        temp_curve_restart_pos_ = new_entry;
     } else {
         temp_curve_end_->next = new_entry;
         temp_curve_end_ = new_entry;
     }
+}
+
+void tcurve_setRepeatStartPosToLatestEntry(void)
+{
+   temp_curve_restart_pos_= temp_curve_end_;
+}
+
+void tcurve_printCurve(void)
+{
+    if (temp_curve_ == 0)
+    {
+        printf("{\"cmd_ok\":false,\"error\":\"No curve set\"}\r\n");
+        return;
+    }
+    printf("{\"curve\":[");
+    for (tc_entry *ce = temp_curve_; ; ce=ce->next)
+    {
+        printf("{\"temp\":%d,\"duration\":%u,\"is_curr\":%d,\"is_loop_start\":%d},",ce->target_temp, ce->hold_for_timeticks, ce == temp_curve_current_,ce == temp_curve_restart_pos_);
+        if (ce == temp_curve_end_)
+            break;
+    }
+    printf("0],\"end_temp:\":%d}\r\n", post_cycle_target_temp_);
 }
 
 int16_t tcurve_getTempToSet(int16_t current_temp, uint16_t ticks_elapsed)
@@ -129,8 +163,8 @@ int16_t tcurve_getTempToSet(int16_t current_temp, uint16_t ticks_elapsed)
             temp_curve_current_ = temp_curve_current_->next;
         } else if (curve_num_repeats_)
         {
-            //restart temp curve from the beginning
-            temp_curve_current_ = temp_curve_;
+            //restart temp curve from the beginning (or the set position)
+            temp_curve_current_ = temp_curve_restart_pos_;
             curve_num_repeats_--;
         } else
             temp_curve_finished_ = 1;
