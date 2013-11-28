@@ -11,19 +11,23 @@ void pwm_init(void)
   TCCR1A = 0;
   TCNT1 = 0;
   OCR1A = 0;
-  TCCR1A = (1<<COM1A1) | (1<<WGM10);
-  TCCR1B = (1<<WGM12);
+  TCCR1A = (1<<WGM10);  //Fast PWM, 8-bit
+  TCCR1B = (1<<WGM12); //Fast PWM, 8-bit
+  //TCCR1A |= (1<<COM1A1) // Clear OCnA/OCnB/OCnC on compare match when up-counting. Set OCnA/OCnB/OCnC on compare match when downcounting.
 }
 
 inline void pwm_on(void)
 {
-  TCCR1B = (TCCR1A & 0xF8) | (1<<CS10);
+  TCCR1A |= (1<<COM1A1); // Clear OCnA/OCnB/OCnC on compare match when up-counting. Set OCnA/OCnB/OCnC on compare match when downcounting.
+  TCCR1B = (TCCR1B & 0xF8) | (1<<CS10); // enable timer clock, no prescaling
 }
 
 inline void pwm_off(void)
 {
-  TCCR1B = (TCCR1A & 0xF8);
+  TCCR1A &= ~((1<<COM1A1) | (1<<COM1A0)); //normal port operation
+  TCCR1B = (TCCR1B & 0xF8);  //no clock source, timer stopped
   TCNT1 = 0;
+  PORTB &= ~ (1 << PB5);  //set pin to LOW (otherwise it will remain in state since last pwm toggle)
 }
 
 void pwm_set(uint8_t val)

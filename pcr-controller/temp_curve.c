@@ -33,16 +33,16 @@ struct tc_entry {
     tc_entry *next;
 };
 
-tc_entry *temp_curve_ = 0;
-tc_entry *temp_curve_end_ = 0;
-tc_entry *temp_curve_current_ = 0;
-tc_entry *temp_curve_restart_pos_ = 0;
+tc_entry *temp_curve_ = 0;  //pointer to start of curve (so we can free it by going through the list)
+tc_entry *temp_curve_end_ = 0;  //pointer to last added entry in curve (so we know can quickly append new entries)
+tc_entry *temp_curve_current_ = 0;  //pointer to currently active entry (temp we currently hold)
+tc_entry *temp_curve_loop_first_ = 0;  //pointer to start of loop (loop is a subset of curve list)
+tc_entry *temp_curve_loop_last_ = 0;  //pointer to end of loop (loop is a subset of curve list)
 
 uint16_t temp_stable_time_ = 0;
 
-uint8_t curve_num_repeats_ = 0;
-uint8_t temp_curve_finished_ = 0;
-int16_t post_cycle_target_temp_ = TCURVE_ERROR;
+uint8_t temp_curve_original_num_repeats_ = 0;
+uint8_t curve_loop_num_repeats_ = 0;   // number of times the loop still needs to be reapeated before finishing the rest of the curve
 
 void tcurve_reset(void)
 {
@@ -60,16 +60,12 @@ void tcurve_reset(void)
     temp_curve_ = 0;
     temp_curve_end_ = 0;
     temp_curve_current_ = 0;
-    curve_num_repeats_ = 0;
-    temp_curve_restart_pos_ = temp_curve_;
-    temp_curve_finished_ = 0;
+    temp_curve_original_num_repeats_ = 0;
+    curve_loop_num_repeats_ = 0;
+    temp_curve_loop_first_ = temp_curve_;
+    temp_curve_loop_last_ = 0;
     if (debug_)
         printf("tcreset: done\n\n");
-}
-
-uint8_t tcurve_hasFinished(void)
-{
-    return temp_curve_finished_;
 }
 
 uint16_t tcurve_getTimeElapsed(void)
@@ -79,7 +75,7 @@ uint16_t tcurve_getTimeElapsed(void)
 
 uint8_t tcurve_getRepeatsLeft(void)
 {
-    return curve_num_repeats_;
+    return curve_loop_num_repeats_;
 }
 
 uint8_t tcurve_isSet(void)
@@ -89,13 +85,8 @@ uint8_t tcurve_isSet(void)
 
 void tcurve_setRepeats(uint8_t r)
 {
-    curve_num_repeats_ = r;
-    temp_curve_finished_ = 0;
-}
-
-void tcurve_setPostCycleTargetTemp(int16_t v)
-{
-    post_cycle_target_temp_ = v;
+    curve_loop_num_repeats_ = r;
+    temp_curve_original_num_repeats_ = r;
 }
 
 void tcurve_add(int16_t temp, uint16_t hold_for_ticks)
@@ -110,7 +101,7 @@ void tcurve_add(int16_t temp, uint16_t hold_for_ticks)
         temp_curve_end_ = new_entry;
         temp_curve_ = new_entry;
         temp_curve_current_ = new_entry;
-        temp_curve_restart_pos_ = new_entry;
+        temp_curve_loop_first_ = new_entry;
     } else {
         temp_curve_end_->next = new_entry;
         temp_curve_end_ = new_entry;
@@ -119,7 +110,16 @@ void tcurve_add(int16_t temp, uint16_t hold_for_ticks)
 
 void tcurve_setRepeatStartPosToLatestEntry(void)
 {
-   temp_curve_restart_pos_= temp_curve_end_;
+    //calling this again, overwrites last set loop start entry
+    temp_curve_loop_first_= temp_curve_end_;
+    //no loop_last_ before loop_first_
+    temp_curve_loop_last_ = 0;
+}
+
+void tcurve_setRepeatEndPosToLatestEntry(void)
+{
+    //calling this again, overwrites last set loop stop entry
+    temp_curve_loop_last_ = temp_curve_end_;
 }
 
 void tcurve_printCurve(void)
@@ -132,11 +132,17 @@ void tcurve_printCurve(void)
     printf("{\"curve\":[");
     for (tc_entry *ce = temp_curve_; ; ce=ce->next)
     {
-        printf("{\"temp\":%d,\"duration\":%u,\"is_curr\":%d,\"is_loop_start\":%d},",ce->target_temp, ce->hold_for_timeticks, ce == temp_curve_current_,ce == temp_curve_restart_pos_);
+        printf("{\"temp\":%d,\"duration\":%u,\"is_curr\":%d,\"is_loop_start\":%d,\"is_loop_end\":%d},",
+            ce->target_temp,
+            ce->hold_for_timeticks,
+            ce == temp_curve_current_,
+            ce == temp_curve_loop_first_,
+            ce == temp_curve_loop_last_);
+
         if (ce == temp_curve_end_)
             break;
     }
-    printf("0],\"end_temp:\":%d}\r\n", post_cycle_target_temp_);
+    printf("0],\"loop_repeats\":%d}\r\n", temp_curve_original_num_repeats_);
 }
 
 int16_t tcurve_getTempToSet(int16_t current_temp, uint16_t ticks_elapsed)
@@ -144,30 +150,28 @@ int16_t tcurve_getTempToSet(int16_t current_temp, uint16_t ticks_elapsed)
     if (temp_curve_current_ == 0)
         return TCURVE_ERROR;
 
-    if (temp_curve_finished_ && post_cycle_target_temp_ != TCURVE_ERROR)
-        return post_cycle_target_temp_;
-
     if (current_temp > temp_curve_current_->target_temp - temp_margin_ && current_temp < temp_curve_current_->target_temp + temp_margin_)
     {
         temp_stable_time_ += ticks_elapsed;
     } // else: ignore the case of temp falling temporarily outside of temp_margin_
 
-    // if time has been stable for long enough, advance to next
-    // if there is no next, repeat curve until curve_num_repeats_ == 0
-    // once that happens, set to post_cycle_target_temp_ or hold last value
+    //if temp has been stable for the set amount of timeticks in current curve element
     if (temp_stable_time_ >= temp_curve_current_->hold_for_timeticks)
     {
         temp_stable_time_ = 0;
-        if (temp_curve_current_->next != 0)
-        {
+
+        if (curve_loop_num_repeats_ && //if repetitions left
+            ( (temp_curve_loop_last_ != 0 && temp_curve_current_ == temp_curve_loop_last_)    //and we have reached a set loop endpoint
+            || temp_curve_current_->next == 0       //or the end of the list
+            ))
+        {   //go back to first point in loop
+            curve_loop_num_repeats_--;
+            temp_curve_current_ = temp_curve_loop_first_;
+        } else if (temp_curve_current_->next != 0)  //else if elements left in curve list
+        {   // go to next element
             temp_curve_current_ = temp_curve_current_->next;
-        } else if (curve_num_repeats_)
-        {
-            //restart temp curve from the beginning (or the set position)
-            temp_curve_current_ = temp_curve_restart_pos_;
-            curve_num_repeats_--;
-        } else
-            temp_curve_finished_ = 1;
+        }
+        //else stay on temperature of last element forever (until reset is called or new elements are added)
     }
     return temp_curve_current_->target_temp;
 }

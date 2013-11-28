@@ -81,6 +81,7 @@ int16_t raw_temp_ = 0;
 uint8_t temp_is_fresh_ = 0;
 uint8_t debug_ = 0;
 uint8_t monitor_temp_ = 0;
+uint8_t pump_autoon_ = 0;
 // at f_system_clk = 10Hz, system_clk_ will not overrun for at least 13 years. PCR won't run that long
 volatile uint32_t system_clk_ = 0;
 
@@ -214,16 +215,16 @@ void setPeltierCoolingDirectionPower(int16_t value)
 
   if (value >= 0)
   {
-    PIN_HIGH(PELTIER_INA_PORT, PELTIER_INA_PIN);
-    PIN_LOW(PELTIER_INB_PORT, PELTIER_INB_PIN);
-    pwm_set((uint8_t) value);
-  } else {
     PIN_LOW(PELTIER_INA_PORT, PELTIER_INA_PIN);
     PIN_HIGH(PELTIER_INB_PORT, PELTIER_INB_PIN);
+    pwm_set((uint8_t) value);
+  } else {
+    PIN_HIGH(PELTIER_INA_PORT, PELTIER_INA_PIN);
+    PIN_LOW(PELTIER_INB_PORT, PELTIER_INB_PIN);
     pwm_set((uint8_t) (-1 * value));
   }
   if (debug_)
-    printf("Peltier value: %d, INA: %d, INB: %d\r\n", value, (PELTIER_INA_PORT & _BV(PELTIER_INA_PIN)) > 0, (PELTIER_INB_PORT & _BV(PELTIER_INB_PIN)) > 0);
+    printf("Peltier value: %d, INA: %d, INB: %d, OCR1AH: %d, OCR1AL: %d\r\n", value, (PELTIER_INA_PORT & _BV(PELTIER_INA_PIN)) > 0, (PELTIER_INB_PORT & _BV(PELTIER_INB_PIN)) > 0, OCR1AH, OCR1AL);
 }
 
 void handle_cmd(uint8_t cmd)
@@ -252,10 +253,17 @@ void handle_cmd(uint8_t cmd)
   case 'P': cmdq_queueCmdWithNumArgs((void*) pid_setP, 1); return;
   case 'I': cmdq_queueCmdWithNumArgs((void*) pid_setI, 1); return;
   case 'D': cmdq_queueCmdWithNumArgs((void*) pid_setD, 1); return;
-  case 'A': PIN_HIGH(PUMP_PORT, PUMP_PIN); break;
-  case 'a': PIN_LOW(PUMP_PORT, PUMP_PIN); break;
+  case 'A':
+    PIN_HIGH(PUMP_PORT, PUMP_PIN);
+    pump_autoon_ = 0;
+    break;
+  case 'a':
+    PIN_LOW(PUMP_PORT, PUMP_PIN);
+    pump_autoon_ = 0;
+    break;
   case 'B': PIN_HIGH(TOPHEAT_PORT, TOPHEAT_PIN); break;
   case 'b': PIN_LOW(TOPHEAT_PORT, TOPHEAT_PIN); break;
+  case '@': pump_autoon_ = 1; break;
   case '.': tcurve_printCurve(); return;
   case '-': //reset temp curve
     tcurve_reset();
@@ -264,9 +272,9 @@ void handle_cmd(uint8_t cmd)
     //~ tcurve_add(readNumber(), readNumber());
     cmdq_queueCmdWithNumArgs((void*) tcurve_add, 2);
     return;
-  case '!': cmdq_queueCmdWithNumArgs((void*) tcurve_setRepeatStartPosToLatestEntry, 0); return;
+  case '>': cmdq_queueCmdWithNumArgs((void*) tcurve_setRepeatStartPosToLatestEntry, 0); return;
+  case '<': cmdq_queueCmdWithNumArgs((void*) tcurve_setRepeatEndPosToLatestEntry, 0); return;
   case 'Z': cmdq_queueCmdWithNumArgs((void*) tcurve_setRepeats, 1); return;
-  case 'E': cmdq_queueCmdWithNumArgs((void*) tcurve_setPostCycleTargetTemp, 1); return;
   default: printf("{\"cmd_ok\":false,\"error\":\"unknown cmd\"}\r\n"); return;
   }
   printf("{\"cmd_ok\":true}\r\n");
@@ -342,6 +350,8 @@ int main(void)
       // e.g. enable periodic temp monitoring 'm' rather than querying temp at some intervall 's'
       if (pid_isEnabled())
       {
+        if (pump_autoon_)
+          PIN_HIGH(PUMP_PORT, PUMP_PIN);
         if (debug_)
           printf("pid_calc..");
         while (system_clk_ - last_time2 < 5); //wait until at least 500ms have passed since last time. Should be enough time for everything else to finish. (after 13 years, code will hang here)
@@ -352,7 +362,11 @@ int main(void)
         setPeltierCoolingDirectionPower(pid_calc(raw_temp_));
       }
       else
+      {
         setPeltierCoolingDirectionPower(0);
+        if (pump_autoon_)
+          PIN_LOW(PUMP_PORT, PUMP_PIN);
+      }
     }
 
     anyio_task();

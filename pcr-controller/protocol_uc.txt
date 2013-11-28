@@ -11,6 +11,7 @@
 'd'		Same as above
 'A'		Switch on pump.
 'a'		Switch pump off.
+'@'		Switch pump on automatically if temp goes higher than 30°C or lower than 19°C
 'B'		Switch on top heater.
 'b'		Switch top heater off.
 'L'		Toggle LED (Debug)
@@ -22,13 +23,14 @@
 '.'		Print out currently programmed temperature curve as JSON string.
 '+'		Add a temperature curve point.  <-TempValue <-Duration
 		Excpects 2 arguments: Targettemperature and duration for which that temperature is to be held after it has been reached.
-'!'		Set the last added (with '+') temperature curve point to be the cycle start point. 
+'>'		Set the last added (with '+') temperature curve point to be the cycle start point.
         E.g. if >0 curve repetitions are set (with 'Z') the repetitions will start here, instead of at the first added curve point.
+'<'		Set the last added (with '+') temperature curve point to be the cycle end point.
+        E.g. this and any temperature points added after this marker will not be repeated, but programmed after the main loop
 'Z'		Set number of cycle repetitions  <-IntValue
 		E.g:	0 == default == no repetitions == 1 cycle
 				1 == 1 repetitions == 2 cycles)
 				....
-'E'		Program a final hold temperature. PID will try to hold this value after all cycles have finished.  <-TempValue
 'm'		Toggle periodic status output as JSON string.
 '?'		Toggle Debug Output.
 '#'     Disable PID (i.e. set PID target temperature to -2048.00)
@@ -73,7 +75,7 @@ Responses to "t" or "s":
 {"t":9999999, "currtemp":5.02, "targettemp":5.00, "curve":true, "curve_t_elapsed":65535, "cycles_left":0}   //we know all is finished because targettemp is hold-temp
 
 Response to "."
-{"curve":[{"temp":1520,"duration":9000,"is_curr":1,"is_loop_start":1},{"temp":1040,"duration":10,"is_curr":0,"is_loop_start":0},{"temp":960,"duration":300,"is_curr":0,"is_loop_start":0},{"temp":1120,"duration":300,"is_curr":0,"is_loop_start":0},0],"end_temp:":80}
+{"curve":[{"temp":1520,"duration":9000,"is_curr":1,"is_loop_start":0,"is_loop_end":0},{"temp":1040,"duration":10,"is_curr":0,"is_loop_start":1,"is_loop_end":0},{"temp":960,"duration":300,"is_curr":0,"is_loop_start":0,"is_loop_end":0},{"temp":1120,"duration":300,"is_curr":0,"is_loop_start":0,"is_loop_end":0},{"temp":1120,"duration":1000,"is_curr":0,"is_loop_start":0,"is_loop_end":1},0],"end_temp":80,"loop_repeats":30}
 
 Response to other commands:
 {"cmd_ok":false,"error": "No DS1820 sensors on 1wire bus, thus no temperature"}
@@ -85,25 +87,26 @@ Response to other commands:
 s
 -
 =
-A
+@
 b
-+1520,9000
-+1040,10
-!
-+960,300
-+1120,300
++1536,300
+>
++448,300
++1152,300
+<
 Z30
-E80
++64,9999
 m
 
 The sequence of above commands
 - prints current temperature
 - deletes any currenlty set temperature curve
 - instructs the PID controller to hold the current temperature
-- enables the pump
-- programms the following temperature curve: 95°C (15min) -> [ ->  65°C (1s) -> 60°C (30s) -> 70°C (30s) ]
-- sets the curve to repeat the items in [] brackets 30 times
-- programms final holding temperature of 5°C (after temperature curve and all cylces have finished).
+- set the pump to auto
+- switch off top heater
+- programms the following temperature curve: [ 96°C (30s) ->  28°C (30s) -> 72°C (30s) ]
+- sets the curve to repeat the items in >< brackets 30 times
+- programms final holding temperature of 4°C (note that duration of last entry does not really matter since it will always be held indefinately).
 - activates periodic status output.
 
 
