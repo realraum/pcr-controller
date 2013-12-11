@@ -24,7 +24,7 @@
 
 extern uint8_t debug_;
 
-const int16_t temp_margin_ = 8; // 0.5 °C
+const int16_t temp_margin_ = 16; // 1 °C
 
 typedef struct tc_entry tc_entry;
 struct tc_entry {
@@ -122,14 +122,14 @@ void tcurve_setRepeatEndPosToLatestEntry(void)
     temp_curve_loop_last_ = temp_curve_end_;
 }
 
-void tcurve_printCurve(void)
+void tcurve_printCurve(uint8_t cmd)
 {
     if (temp_curve_ == 0)
     {
-        printf("{\"cmd_ok\":false,\"error\":\"No curve set\"}\r\n");
+        printf("{\"cmd\":\"%c\",\"cmd_ok\":false,\"error\":\"No curve set\"}\r\n",cmd);
         return;
     }
-    printf("{\"curve\":[");
+    printf("{\"cmd\":\"%c\",\"curve\":[",cmd);
     for (tc_entry *ce = temp_curve_; ; ce=ce->next)
     {
         printf("{\"temp\":%d,\"duration\":%u,\"is_curr\":%d,\"is_loop_start\":%d,\"is_loop_end\":%d},",

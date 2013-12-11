@@ -29,6 +29,7 @@
 
 typedef struct {
     uint8_t num_args;
+    uint8_t cmd;
     void* function_ptr;
     int16_t input_list[CMDQ_INPUT_LIST_LEN];
     uint8_t num_args_read;
@@ -78,16 +79,17 @@ uint8_t cmdq_addCharToArgumentBuffer(uint8_t c)
     return 0;
 }
 
-void cmdq_queueCmdWithNumArgs(void* fptr, uint8_t num_args)
+void cmdq_queueCmdWithNumArgs(void* fptr, uint8_t num_args, uint8_t cmd)
 {
     if (num_args > CMDQ_INPUT_LIST_LEN)
     {
-        printf("{\"cmd_ok\":false,\"error\":\"max args == %d\"}\r\n", CMDQ_INPUT_LIST_LEN);
-        return; //can't do that Would hang cmdq
+        printf("{\"cmd\":\"%c\",\"cmd_ok\":false,\"error\":\"max args == %d\"}\r\n", cmd, CMDQ_INPUT_LIST_LEN);
+        return; //to continue would hang cmdq, so we don't
     }
     if ((cmd_queue_next_here_ +1) % CMQ_QUEUE_LENGTH == cmd_queue_todo_pos_) //for this check REQUIRED: CMQ_QUEUE_LENGTH > 2
         cmdq_doWork(); //no more space in queue -> execute now !
     cmd_queue_[cmd_queue_next_here_].num_args = num_args;
+    cmd_queue_[cmd_queue_next_here_].cmd = cmd;
     cmd_queue_[cmd_queue_next_here_].function_ptr = fptr;
     cmd_queue_[cmd_queue_next_here_].num_args_read = 0;
     cmd_queue_fillargs_pos_ = cmd_queue_next_here_;
@@ -117,11 +119,13 @@ void cmdq_doWork(void)
                 ((void(*)(int16_t,int16_t)) cmd_queue_[cmd_queue_todo_pos_].function_ptr)(cmd_queue_[cmd_queue_todo_pos_].input_list[0], cmd_queue_[cmd_queue_todo_pos_].input_list[1]);
                 break;
         }
+        char cmd = cmd_queue_[cmd_queue_todo_pos_].cmd;
         cmd_queue_[cmd_queue_todo_pos_].num_args_read = 0;
         cmd_queue_[cmd_queue_todo_pos_].num_args = 0;
         cmd_queue_[cmd_queue_todo_pos_].function_ptr = 0;
+        cmd_queue_[cmd_queue_todo_pos_].cmd = 0;
         cmd_queue_todo_pos_++;
         cmd_queue_todo_pos_ %= CMQ_QUEUE_LENGTH;
-        printf("{\"cmd_ok\":true}\r\n");
+        printf("{\"cmd\":\"%c\",\"cmd_ok\":true}\r\n",cmd);
     }
 }

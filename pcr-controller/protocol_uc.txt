@@ -12,7 +12,7 @@
 'A'		Switch on pump.
 'a'		Switch pump off.
 '@'		Switch pump on automatically if temp goes higher than 30°C or lower than 19°C
-'B'		Switch on top heater.
+'B'		Set top heater PWM to value between 0 and 255 (in future pwm value may be fixed and 'B' may return to simple on switch)  <-IntValue
 'b'		Switch top heater off.
 'L'		Toggle LED (Debug)
 'l'		Toggle LED by using queuing system (Debug)
@@ -31,7 +31,8 @@
 		E.g:	0 == default == no repetitions == 1 cycle
 				1 == 1 repetitions == 2 cycles)
 				....
-'m'		Toggle periodic status output as JSON string.
+'M'		Enable periodic status output as JSON string.
+'m'		Disable periodic status output as JSON string.
 '?'		Toggle Debug Output.
 '#'     Disable PID (i.e. set PID target temperature to -2048.00)
 		(Only works if no temperature curve is set. If needed use '-' first.)
@@ -67,20 +68,22 @@ A value of -2048.00 or -32768 generally means something is DISABLED or inapplica
 
 
 ==== Example uc Answers ====
-Responses to "t" or "s":
-{"t":503, "currtemp":20.34, "targettemp":-2048.00, "curve":false, "curve_t_elapsed":0, "cycles_left":0}  //curve and pid disabled  (pid disabel when targettemp == -2048.00
-{"t":97000, "currtemp":40.34, "targettemp":70.00, "curve":true, "curve_t_elapsed":14, "cycles_left":11}
-{"t":97200, "currtemp":69.72, "targettemp":70.00, "curve":true, "curve_t_elapsed":214, "cycles_left":11}
-{"t":110123, "currtemp":30.14, "targettemp":30.00, "curve":true, "curve_t_elapsed":10, "cycles_left":9}
-{"t":9999999, "currtemp":5.02, "targettemp":5.00, "curve":true, "curve_t_elapsed":65535, "cycles_left":0}   //we know all is finished because targettemp is hold-temp
+Responses to "s":
+{"cmd":"s","t":503, "currtemp":20.34, "targettemp":-2048.00, "curve":false, "curve_t_elapsed":0, "cycles_left":0}  //curve and pid disabled  (pid disabel when targettemp == -2048.00
+{"cmd":"s","t":97000, "currtemp":40.34, "targettemp":70.00, "curve":true, "curve_t_elapsed":14, "cycles_left":11}
+{"cmd":"s","t":97200, "currtemp":69.72, "targettemp":70.00, "curve":true, "curve_t_elapsed":214, "cycles_left":11}
+{"cmd":"s","t":110123, "currtemp":30.14, "targettemp":30.00, "curve":true, "curve_t_elapsed":10, "cycles_left":9}
+{"cmd":"s","t":9999999, "currtemp":5.02, "targettemp":5.00, "curve":true, "curve_t_elapsed":65535, "cycles_left":0}   //we know all is finished because targettemp is hold-temp
 
 Response to "."
-{"curve":[{"temp":1520,"duration":9000,"is_curr":1,"is_loop_start":0,"is_loop_end":0},{"temp":1040,"duration":10,"is_curr":0,"is_loop_start":1,"is_loop_end":0},{"temp":960,"duration":300,"is_curr":0,"is_loop_start":0,"is_loop_end":0},{"temp":1120,"duration":300,"is_curr":0,"is_loop_start":0,"is_loop_end":0},{"temp":1120,"duration":1000,"is_curr":0,"is_loop_start":0,"is_loop_end":1},0],"end_temp":80,"loop_repeats":30}
+{"cmd":".","curve":[{"temp":1520,"duration":9000,"is_curr":1,"is_loop_start":0,"is_loop_end":0},{"temp":1040,"duration":10,"is_curr":0,"is_loop_start":1,"is_loop_end":0},{"temp":960,"duration":300,"is_curr":0,"is_loop_start":0,"is_loop_end":0},{"temp":1120,"duration":300,"is_curr":0,"is_loop_start":0,"is_loop_end":0},{"temp":1120,"duration":1000,"is_curr":0,"is_loop_start":0,"is_loop_end":1},0],"end_temp":80,"loop_repeats":30}
 
 Response to other commands:
-{"cmd_ok":false,"error": "No DS1820 sensors on 1wire bus, thus no temperature"}
-{"cmd_ok":false,"error":"talking to DS18b20, no valid temperature!"}
-{"cmd_ok":true}
+{"cmd":"s","cmd_ok":false,"error": "No DS1820 sensors on 1wire bus, thus no temperature"}
+{"cmd":"s","cmd_ok":false,"error":"talking to DS18b20, no valid temperature!"}
+{"cmd":"A","cmd_ok":true}
+{"cmd":"a","cmd_ok":true}
+{"cmd":"#","cmd_ok":true}
 
 
 ==== Example Program ====
@@ -96,7 +99,7 @@ b
 <
 Z30
 +64,9999
-m
+M
 
 The sequence of above commands
 - prints current temperature
@@ -111,3 +114,4 @@ The sequence of above commands
 
 
 (c) Bernhard Tittelbach, 2013
+

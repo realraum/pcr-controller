@@ -61,10 +61,12 @@
 #define PELTIER_INB_PORT  PORTB
 #define PELTIER_INB_DDR  DDRB
 
+//OC1A
 #define PELETIER_PWM_EN_PIN PINB5
 #define PELETIER_PWM_EN_PORT PORTB
 #define PELETIER_PWM_EN_DDR DDRB
 
+//OC4D
 #define TOPHEAT_PIN PIND7
 #define TOPHEAT_PORT PORTD
 #define TOPHEAT_DDR DDRD
@@ -166,14 +168,14 @@ void printStatus(void)
 {
   if (num_temp_sensors_ == 0)
   {
-    printf("{\"cmd_ok\":false,\"error\": \"No DS1820 sensors on 1wire bus, thus no temperature\"}\r\n");
+    printf("{\"cmd\":\"s\",\"cmd_ok\":false,\"error\": \"No DS1820 sensors on 1wire bus, thus no temperature\"}\r\n");
     return;
   }
   if (raw_temp_ == DS1820_ERROR)
   {
-      printf("{\"cmd_ok\":false,\"error\":\"talking to DS18b20, no valid temperature!\"}\r\n");
+      printf("{\"cmd\":\"s\",\"cmd_ok\":false,\"error\":\"talking to DS18b20, no valid temperature!\"}\r\n");
   } else {
-      printf("{\"t\":%lu, \"currtemp\":", system_clk_);
+      printf("{\"cmd\":\"s\",\"t\":%lu, \"currtemp\":", system_clk_);
       printRawTemp(raw_temp_);
       printf(", \"targettemp\":");
       printRawTemp(pid_getTargetValue());
@@ -217,14 +219,19 @@ void setPeltierCoolingDirectionPower(int16_t value)
   {
     PIN_LOW(PELTIER_INA_PORT, PELTIER_INA_PIN);
     PIN_HIGH(PELTIER_INB_PORT, PELTIER_INB_PIN);
-    pwm_set((uint8_t) value);
+    pwm_b5_set((uint8_t) value);
   } else {
     PIN_HIGH(PELTIER_INA_PORT, PELTIER_INA_PIN);
     PIN_LOW(PELTIER_INB_PORT, PELTIER_INB_PIN);
-    pwm_set((uint8_t) (-1 * value));
+    pwm_b5_set((uint8_t) (-1 * value));
   }
   if (debug_)
     printf("Peltier value: %d, INA: %d, INB: %d, OCR1AH: %d, OCR1AL: %d\r\n", value, (PELTIER_INA_PORT & _BV(PELTIER_INA_PIN)) > 0, (PELTIER_INB_PORT & _BV(PELTIER_INB_PIN)) > 0, OCR1AH, OCR1AL);
+}
+
+void setTopHeaderValue(int16_t value)
+{
+    pwm_d7_set((uint8_t) (value & 0xFF));
 }
 
 void handle_cmd(uint8_t cmd)
@@ -237,22 +244,23 @@ void handle_cmd(uint8_t cmd)
   case 'R':
   case 'r': reset2bootloader(); break;
   case '?': debug_ = ~debug_; break;
-  case 'm': monitor_temp_ = ~monitor_temp_; break;
+  case 'M': monitor_temp_ = 1; break;
+  case 'm': monitor_temp_ = 0; break;
   case '=': pid_setTargetValue(raw_temp_); break;
   case '#': pid_setTargetValue(PID_DISABLED); break;
   case 't':
   case 's': printStatus(); return;
   case 'L': led_toggle(); break;
-  case 'l': cmdq_queueCmdWithNumArgs((void*) led_toggle, 0); return;
+  case 'l': cmdq_queueCmdWithNumArgs((void*) led_toggle, 0, cmd); return;
   case 'p':
   case 'i':
   case 'd':
     pid_printVars();
     return;
-  case 'T': cmdq_queueCmdWithNumArgs((void*) pid_setTargetValue, 1); return;
-  case 'P': cmdq_queueCmdWithNumArgs((void*) pid_setP, 1); return;
-  case 'I': cmdq_queueCmdWithNumArgs((void*) pid_setI, 1); return;
-  case 'D': cmdq_queueCmdWithNumArgs((void*) pid_setD, 1); return;
+  case 'T': cmdq_queueCmdWithNumArgs((void*) pid_setTargetValue, 1, cmd); return;
+  case 'P': cmdq_queueCmdWithNumArgs((void*) pid_setP, 1, cmd); return;
+  case 'I': cmdq_queueCmdWithNumArgs((void*) pid_setI, 1, cmd); return;
+  case 'D': cmdq_queueCmdWithNumArgs((void*) pid_setD, 1, cmd); return;
   case 'A':
     PIN_HIGH(PUMP_PORT, PUMP_PIN);
     pump_autoon_ = 0;
@@ -261,23 +269,25 @@ void handle_cmd(uint8_t cmd)
     PIN_LOW(PUMP_PORT, PUMP_PIN);
     pump_autoon_ = 0;
     break;
-  case 'B': PIN_HIGH(TOPHEAT_PORT, TOPHEAT_PIN); break;
-  case 'b': PIN_LOW(TOPHEAT_PORT, TOPHEAT_PIN); break;
+  case 'B': cmdq_queueCmdWithNumArgs((void*) setTopHeaderValue, 1, cmd); return;
+  case 'b': setTopHeaderValue(0); break;
+  //~ case 'B': PIN_HIGH(TOPHEAT_PORT,TOPHEAT_PIN); break;
+  //~ case 'b': PIN_LOW(TOPHEAT_PORT,TOPHEAT_PIN); break;
   case '@': pump_autoon_ = 1; break;
-  case '.': tcurve_printCurve(); return;
+  case '.': tcurve_printCurve(cmd); return;
   case '-': //reset temp curve
     tcurve_reset();
     break;
   case '+': //add temp curve entry
     //~ tcurve_add(readNumber(), readNumber());
-    cmdq_queueCmdWithNumArgs((void*) tcurve_add, 2);
+    cmdq_queueCmdWithNumArgs((void*) tcurve_add, 2, cmd);
     return;
-  case '>': cmdq_queueCmdWithNumArgs((void*) tcurve_setRepeatStartPosToLatestEntry, 0); return;
-  case '<': cmdq_queueCmdWithNumArgs((void*) tcurve_setRepeatEndPosToLatestEntry, 0); return;
-  case 'Z': cmdq_queueCmdWithNumArgs((void*) tcurve_setRepeats, 1); return;
-  default: printf("{\"cmd_ok\":false,\"error\":\"unknown cmd\"}\r\n"); return;
+  case '>': cmdq_queueCmdWithNumArgs((void*) tcurve_setRepeatStartPosToLatestEntry, 0, cmd); return;
+  case '<': cmdq_queueCmdWithNumArgs((void*) tcurve_setRepeatEndPosToLatestEntry, 0, cmd); return;
+  case 'Z': cmdq_queueCmdWithNumArgs((void*) tcurve_setRepeats, 1, cmd); return;
+  default: printf("{\"cmd\":\"%c\",\"cmd_ok\":false,\"error\":\"unknown cmd\"}\r\n",cmd); return;
   }
-  printf("{\"cmd_ok\":true}\r\n");
+  printf("{\"cmd\":\"%c\",\"cmd_ok\":true}\r\n",cmd);
 }
 
 int main(void)
@@ -299,9 +309,10 @@ int main(void)
   PINMODE_OUTPUT(PELTIER_INB_DDR, PELTIER_INB_PIN);
   PINMODE_OUTPUT(PELTIER_INA_DDR, PELTIER_INA_PIN);
   PINMODE_OUTPUT(TOPHEAT_DDR, TOPHEAT_PIN);
+  PIN_LOW(TOPHEAT_PORT, TOPHEAT_PIN);
 
   pwm_init();
-  pwm_set(0);
+  pwm_b5_set(0);
 
   pid_loadFromEEPROM();
 

@@ -31,7 +31,7 @@
 */
 
 uint8_t cmdq_addCharToArgumentBuffer(uint8_t c);
-void cmdq_queueCmdWithNumArgs(void* fptr, uint8_t num_args);
+void cmdq_queueCmdWithNumArgs(void* fptr, uint8_t num_args, uint8_t cmd);
 void cmdq_doWork(void);
 
 #endif

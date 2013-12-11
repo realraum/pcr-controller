@@ -35,6 +35,6 @@ uint16_t tcurve_getTimeElapsed(void);
 uint8_t tcurve_getRepeatsLeft(void);
 void tcurve_add(int16_t temp, uint16_t hold_for_s);
 int16_t tcurve_getTempToSet(int16_t current_temp, uint16_t time_elapsed);
-void tcurve_printCurve(void);
+void tcurve_printCurve(uint8_t cmd);
 
 #endif
