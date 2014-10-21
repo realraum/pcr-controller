@@ -2,7 +2,7 @@
  *  rPCR Teensy Controller Code
  *
  *
- *  Copyright (C) 2013 Bernhard Tittelbach <xro@realraum.at>
+ *  Copyright (C) 2013-2014 Bernhard Tittelbach <xro@realraum.at>
  *
  *  This code is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
