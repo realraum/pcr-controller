@@ -2,7 +2,7 @@
 ##  spreadspace avr utils
 ##
 ##
-##  Copyright (C) 2013-2014 Christian Pointner <equinox@spreadspace.org>
+##  Copyright (C) 2013-2014 Bernhard Tittelbach <xro@realraum.at>
 ##
 ##  This file is part of spreadspace avr utils.
 ##
