@@ -1,5 +1,5 @@
 /*
- *  rPCR Teensy Controller Code
+ *  pcr-controller
  *
  *
  *  Copyright (C) 2013-2014 Bernhard Tittelbach <xro@realraum.at>
@@ -15,7 +15,7 @@
  *  GNU General Public License for more details.
  *
  *  You should have received a copy of the GNU General Public License
- *  along with spreadspace avr utils. If not, see <http://www.gnu.org/licenses/>.
+ *  along with pcr-controller. If not, see <http://www.gnu.org/licenses/>.
 */
 
 #ifndef TEMP_CURVE_INCLUDE_H_
